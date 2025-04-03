@@ -14,8 +14,10 @@ import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
-
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False):
+import os
+import cv2 as cv
+import numpy as np
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False, iteration=-1, plane_constraint_iteration=-1):
     """
     Render the scene. 
     
@@ -117,12 +119,67 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     rendered_image = rendered_image.clamp(0, 1)
+
+    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    if pipe.compute_normals and iteration > plane_constraint_iteration:  # 需要在 PipelineParams 中添加此参数
+        normal_map = compute_normal_map(depth_image, viewpoint_camera)
+    else:
+        normal_map = None    
+    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
     out = {
         "render": rendered_image,
         "viewspace_points": screenspace_points,
         "visibility_filter" : (radii > 0).nonzero(),
         "radii": radii,
-        "depth" : depth_image
+        "depth" : depth_image,
+        "normal_map" : normal_map
         }
     
     return out
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+def compute_normal_map(depth, camera):
+    """从深度图计算法向量图，首先将深度图转换为三维空间中的点云，然后通过计算点云中相邻点的差值来估算法向量。叉积操作确保了法向量是垂直于表面的
+    Args:
+        depth: 深度图
+        camera: 相机
+    Returns:
+        normals: 法向量图
+    """
+    # 获取视场角
+    fovx = camera.FoVx
+    fovy = camera.FoVy
+    aspect_ratio = camera.image_width / camera.image_height
+    tan_fovX_half  = torch.tan(torch.tensor(fovx * 0.5))
+    tan_fovY_half = torch.tan(torch.tensor(fovy * 0.5))
+
+    # 生成归一化像素坐标
+    y, x = torch.meshgrid(
+        torch.linspace(-tan_fovY_half, tan_fovY_half, camera.image_height),
+        torch.linspace(-tan_fovX_half * aspect_ratio, tan_fovX_half * aspect_ratio, camera.image_width)
+    )
+    x = x.to(depth.device)
+    y = y.to(depth.device)
+
+    # 计算每个像素的3D位置
+    X = x * depth
+    Y = y * depth
+    Z = depth
+
+    # 计算相邻点的差值来估计法向量
+    dX = torch.roll(X, -1, dims=1) - X
+    dY = torch.roll(Y, -1, dims=0) - Y
+    dZ = torch.roll(Z, -1, dims=1) - Z
+    
+    # 叉乘得到法向量
+    normals = torch.cross(
+        torch.stack([dX, dY, dZ], dim=-1),
+        torch.stack([dX, dY, torch.roll(dZ, -1, dims=0)], dim=-1)
+    )
+    
+    # 归一化
+    normals = normals / (torch.norm(normals, dim=-1, keepdim=True) + 1e-7)
+    
+    return normals
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

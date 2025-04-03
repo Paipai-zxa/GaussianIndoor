@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss, ssim, plane_constraint_loss, cross_view_constraint
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -40,7 +40,7 @@ try:
 except:
     SPARSE_ADAM_AVAILABLE = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, plane_constraint_iteration, cross_view_constraint_iteration):
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
@@ -66,9 +66,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     viewpoint_stack = scene.getTrainCameras().copy()
     viewpoint_indices = list(range(len(viewpoint_stack)))
     ema_loss_for_log = 0.0
-    ema_Ll1depth_for_log = 0.0
+    ema_plane_loss_for_log = 0.0
+    ema_cross_view_loss_for_log = 0.0
+    # ema_Ll1depth_for_log = 0.0
 
-    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
+    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress", ncols=200)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
         if network_gui.conn == None:
@@ -108,7 +110,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE, iteration=iteration, plane_constraint_iteration=plane_constraint_iteration)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
         if viewpoint_cam.alpha_mask is not None:
@@ -124,6 +126,30 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             ssim_value = ssim(image, gt_image)
 
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        # Plane normalconstraint
+        plane_loss = torch.tensor(0.0, device="cuda")
+        if iteration > plane_constraint_iteration and pipe.use_plane_constraint:
+            normal_map = render_pkg["normal_map"]
+            depth_map = render_pkg["depth"]
+            if normal_map is not None:
+                plane_loss = plane_constraint_loss(depth_map, normal_map)
+            loss += opt.plane_constraint_weight * plane_loss
+
+        #Cross view constraint
+        cross_view_loss = torch.tensor(0.0, device="cuda")
+        if iteration > cross_view_constraint_iteration and pipe.use_cross_view_constraint:
+        # if True:
+            neighbor_cams = scene.get_neighbor_cameras(viewpoint_cam, opt.num_neighbors_views)
+            neighbor_depths = []
+            for neighbor_cam in neighbor_cams:
+                neighbor_render_pkg = render(neighbor_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE)
+                neighbor_depths.append(neighbor_render_pkg["depth"])
+            depth_map = render_pkg["depth"]
+            cross_view_loss = cross_view_constraint(viewpoint_cam, depth_map, neighbor_cams, neighbor_depths)
+            loss += opt.cross_view_constraint_weight * cross_view_loss
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         # Depth regularization
         Ll1depth_pure = 0.0
@@ -145,17 +171,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
-
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Depth Loss": f"{ema_Ll1depth_for_log:.{7}f}"})
+                # progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "Depth Loss": f"{ema_Ll1depth_for_log:.{7}f}"})
+                ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+                ema_plane_loss_for_log = (0.4 * plane_loss.item() + 0.6 * ema_plane_loss_for_log) * opt.plane_constraint_weight
+                ema_cross_view_loss_for_log = (0.4 * cross_view_loss.item() + 0.6 * ema_cross_view_loss_for_log) * opt.cross_view_constraint_weight
+                point_num = gaussians.get_xyz.shape[0]
+                # ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{5}f}", "Plane Loss": f"{ema_plane_loss_for_log:.{5}f}", "Cross View Loss": f"{ema_cross_view_loss_for_log:.{5}f}", "Point Num": f"{point_num}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
 
             # Log and save
+            torch.cuda.synchronize()
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+            # training_report(tb_writer, iteration, Ll1, loss, l1_loss, testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -185,6 +216,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     gaussians.optimizer.step()
                     gaussians.optimizer.zero_grad(set_to_none = True)
 
+            # save checkpoint
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
@@ -212,6 +244,7 @@ def prepare_output_and_logger(args):
     return tb_writer
 
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, train_test_exp):
+# def training_report(tb_writer, iteration, Ll1, loss, l1_loss, testing_iterations, scene : Scene, renderFunc, renderArgs, train_test_exp):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -267,6 +300,12 @@ if __name__ == "__main__":
     parser.add_argument('--disable_viewer', action='store_true', default=False)
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+
+    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    parser.add_argument("--plane_constraint_iteration", type=int, default=10000)
+    parser.add_argument("--cross_view_constraint_iteration", type=int, default=5000)
+    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
     
@@ -279,7 +318,9 @@ if __name__ == "__main__":
     if not args.disable_viewer:
         network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    training(lp.extract(args), op.extract(args), pp.extract(args), \
+             args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, \
+                args.debug_from, args.plane_constraint_iteration, args.cross_view_constraint_iteration)
 
     # All done
     print("\nTraining complete.")

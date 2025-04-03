@@ -27,7 +27,7 @@ try:
 except:
     pass
 
-class GaussianModel:
+class  GaussianModel:
 
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):

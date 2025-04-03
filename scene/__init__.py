@@ -98,3 +98,37 @@ class Scene:
 
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
+    
+    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    def get_neighbor_cameras(self, camera, num_neighbors, scale=1.0):
+        """
+        Get neighboring cameras within a specified nums.
+        
+        Args:
+            camera: The camera to find neighbors for.
+            num_neighbors: The number of neighboring cameras to find.
+
+        Returns:
+            A list of neighboring camera indices.
+        """
+        # Get all camera indices
+        all_cameras = self.train_cameras[scale]
+        sorted_cameras = sorted(all_cameras, key=lambda x: int(x.image_name.split(".")[0]))
+        #查找camera在sorted_cameras中的索引
+        index = sorted_cameras.index(camera)
+        length = len(sorted_cameras)
+        neighbor_cameras = []
+        #除sorted_cameras[index]外，周围的num_neighbors个相机加入neighbor_cameras
+        left = 1
+        right = 1
+        while len(neighbor_cameras) < num_neighbors:
+            if index - left >= 0:
+                neighbor_cameras.append(sorted_cameras[index - left])
+                left += 1
+                continue
+            if index + right < length:
+                neighbor_cameras.append(sorted_cameras[index + right])
+                right += 1
+                continue
+        return neighbor_cameras
+    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -69,6 +69,13 @@ class PipelineParams(ParamGroup):
         self.compute_cov3D_python = False
         self.debug = False
         self.antialiasing = False
+
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        self.use_plane_constraint = False
+        self.compute_normals = False
+        self.use_cross_view_constraint = False
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        
         super().__init__(parser, "Pipeline Parameters")
 
 class OptimizationParams(ParamGroup):
@@ -97,6 +104,13 @@ class OptimizationParams(ParamGroup):
         self.depth_l1_weight_final = 0.01
         self.random_background = False
         self.optimizer_type = "default"
+
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        self.plane_constraint_weight = 0.5
+        self.cross_view_constraint_weight = 0.0001
+        self.num_neighbors_views = 2
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
