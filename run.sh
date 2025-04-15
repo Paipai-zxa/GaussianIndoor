@@ -1,4 +1,4 @@
-iterations=15500
+iterations=15000
 plane_constraint_iteration=5000
 cross_view_constraint_iteration=15000
 use_plane_constraint=False
@@ -10,7 +10,7 @@ export CUDA_VISIBLE_DEVICES=1
 for scene in 0085_00
 do
     start_checkpoint=output/0085_00/chkpnt15000.pth
-    output_path=output/${scene}_15000
+    output_path=output/${scene}
     if [ ${use_plane_constraint} = True ]; then
         output_path=${output_path}_use_plane_constraint
     fi
@@ -24,13 +24,13 @@ do
         -s ${data_path} \
         -m ${output_path} \
         --iterations ${iterations} \
-        --eval \
-        --plane_constraint_weight 1.0 \
-        --plane_constraint_iteration ${plane_constraint_iteration} \
-        --cross_view_constraint_iteration ${cross_view_constraint_iteration} \
-        --cross_view_constraint_weight 0.0005 \
-        --num_neighbors_views 2 \
-        --start_checkpoint ${start_checkpoint}
+        --eval
+        # --plane_constraint_weight 1.0 \
+        # --plane_constraint_iteration ${plane_constraint_iteration} \
+        # --cross_view_constraint_iteration ${cross_view_constraint_iteration} \
+        # --cross_view_constraint_weight 0.0005 \
+        # --num_neighbors_views 2 \
+        # --start_checkpoint ${start_checkpoint}
         # --checkpoint_iterations ${checkpoint_iterations[@]}
     python render.py \
         -m ${output_path} \

@@ -4,7 +4,7 @@ source_path = "/data1/zxa/Data/ScanNetV2/scans"
 target_path = "/data1/zxa/GaussianIndoor/data"
 
 # scene_list = ['0050_00', '0085_00', '0114_02', '0580_00', '0603_00', '0616_00', '0617_00']
-scene_list = ['0085_00', '0114_02', '0603_00', '0616_00']
+scene_list = ['0085_00']
 
 
 for scene in scene_list:

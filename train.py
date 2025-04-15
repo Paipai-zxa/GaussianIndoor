@@ -13,7 +13,7 @@ import os
 import torch
 from random import randint
 from utils.loss_utils import l1_loss, ssim, plane_constraint_loss, cross_view_constraint
-from gaussian_renderer import render, network_gui
+from gaussian_renderer import render
 import sys
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state, get_expon_lr_func
@@ -22,6 +22,11 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+import torchvision
+import matplotlib.pyplot as plt
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -68,25 +73,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     ema_plane_loss_for_log = 0.0
     ema_cross_view_loss_for_log = 0.0
-    # ema_Ll1depth_for_log = 0.0
+    ema_Ll1depth_for_log = 0.0
 
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress", ncols=200)
     first_iter += 1
     for iteration in range(first_iter, opt.iterations + 1):
-        if network_gui.conn == None:
-            network_gui.try_connect()
-        while network_gui.conn != None:
-            try:
-                net_image_bytes = None
-                custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
-                if custom_cam != None:
-                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifier=scaling_modifer, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE)["render"]
-                    net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-                network_gui.send(net_image_bytes, dataset.source_path)
-                if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
-                    break
-            except Exception as e:
-                network_gui.conn = None
+        # if network_gui.conn == None:
+        #     network_gui.try_connect()
+        # while network_gui.conn != None:
+        #     try:
+        #         net_image_bytes = None
+        #         custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
+        #         if custom_cam != None:
+        #             net_image = render(custom_cam, gaussians, pipe, background, scaling_modifier=scaling_modifer, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE)["render"]
+        #             net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+        #         network_gui.send(net_image_bytes, dataset.source_path)
+        #         if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
+        #             break
+        #     except Exception as e:
+        #         network_gui.conn = None
 
         iter_start.record()
 
@@ -110,9 +115,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE, iteration=iteration, plane_constraint_iteration=plane_constraint_iteration)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
+        torchvision.utils.save_image(image, "./output/test/image.png")
+        # valid_mask = torch.isfinite(depth_map) & (depth_map > 0)
+        # valid_depth_map = depth_map[valid_mask]
+        # min_depth = valid_depth_map.min()
+        # max_depth = valid_depth_map.max()
+        # normalized_depth_map = torch.zeros_like(depth_map)
+        # normalized_depth_map[valid_mask] = (depth_map[valid_mask] - min_depth) / (max_depth - min_depth)
+        # cmap = plt.get_cmap("viridis")
+        # depth_np = normalized_depth_map.squeeze(0).detach().cpu().numpy()
+        # colored_depth = cmap(depth_np)
+        # colored_depth = torch.from_numpy(colored_depth[:, :, 0:3]).permute(2, 0, 1).float()
+        # torchvision.utils.save_image(colored_depth, "./output/test/depth_map.png")
+        # torchvision.utils.save_image(normal_map, "./output/test/normal_map.png")
         if viewpoint_cam.alpha_mask is not None:
             alpha_mask = viewpoint_cam.alpha_mask.cuda()
             image *= alpha_mask
@@ -131,10 +148,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Plane normalconstraint
         plane_loss = torch.tensor(0.0, device="cuda")
         if iteration > plane_constraint_iteration and pipe.use_plane_constraint:
-            normal_map = render_pkg["normal_map"]
-            depth_map = render_pkg["depth"]
-            if normal_map is not None:
-                plane_loss = plane_constraint_loss(depth_map, normal_map)
+            depth_map, normal_map = render_pkg["depth"], render_pkg["normal"]
+            plane_loss = plane_constraint_loss(depth_map, normal_map)
             loss += opt.plane_constraint_weight * plane_loss
 
         #Cross view constraint
@@ -177,15 +192,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 ema_plane_loss_for_log = (0.4 * plane_loss.item() + 0.6 * ema_plane_loss_for_log) * opt.plane_constraint_weight
                 ema_cross_view_loss_for_log = (0.4 * cross_view_loss.item() + 0.6 * ema_cross_view_loss_for_log) * opt.cross_view_constraint_weight
                 point_num = gaussians.get_xyz.shape[0]
-                # ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
-                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{5}f}", "Plane Loss": f"{ema_plane_loss_for_log:.{5}f}", "Cross View Loss": f"{ema_cross_view_loss_for_log:.{5}f}", "Point Num": f"{point_num}"})
+                ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{5}f}", "D Loss": f"{ema_Ll1depth_for_log:.{4}f}", "P Loss": f"{ema_plane_loss_for_log:.{4}f}", "Cro Loss": f"{ema_cross_view_loss_for_log:.{4}f}", "P Num": f"{point_num}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
 
             # Log and save
             torch.cuda.synchronize()
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background), dataset.train_test_exp)
+            # training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
             # training_report(tb_writer, iteration, Ll1, loss, l1_loss, testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -315,8 +331,8 @@ if __name__ == "__main__":
     safe_state(args.quiet)
 
     # Start GUI server, configure and run training
-    if not args.disable_viewer:
-        network_gui.init(args.ip, args.port)
+    # if not args.disable_viewer:
+    #     network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(lp.extract(args), op.extract(args), pp.extract(args), \
              args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, \

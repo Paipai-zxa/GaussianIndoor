@@ -45,8 +45,7 @@ namespace FORWARD
 		float4* conic_opacity,
 		const dim3 grid,
 		uint32_t* tiles_touched,
-		bool prefiltered,
-		bool antialiasing);
+		bool prefiltered);
 
 	// Main rasterization method.
 	void render(
@@ -54,15 +53,22 @@ namespace FORWARD
 		const uint2* ranges,
 		const uint32_t* point_list,
 		int W, int H,
+		const float focal_x, const float focal_y,
+		const float cx, const float cy,
+		const float* viewmatrix,
+		const float* cam_pos,
 		const float2* points_xy_image,
 		const float* features,
+		const float* all_map,
 		const float4* conic_opacity,
 		float* final_T,
 		uint32_t* n_contrib,
 		const float* bg_color,
 		float* out_color,
-		float* depths,
-		float* depth);
+		int* out_observe,
+		float* out_all_map,
+		float* out_plane_depth,
+		const bool render_geo);
 }
 
 
