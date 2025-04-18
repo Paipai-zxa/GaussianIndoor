@@ -50,12 +50,13 @@ class ModelParams(ParamGroup):
         self._source_path = ""
         self._model_path = ""
         self._images = "images"
-        # self._depths = ""
+        self._depths = ""
         self._resolution = -1
         self._white_background = False
         self.train_test_exp = False
         self.data_device = "cuda"
         self.eval = False
+
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -69,12 +70,6 @@ class PipelineParams(ParamGroup):
         self.compute_cov3D_python = False
         self.debug = False
         self.antialiasing = False
-
-        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        self.use_plane_constraint = False
-        self.compute_normals = False
-        self.use_cross_view_constraint = False
-        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         
         super().__init__(parser, "Pipeline Parameters")
 

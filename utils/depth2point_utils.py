@@ -4,11 +4,49 @@ from PIL import Image
 import os
 from argparse import ArgumentParser
 import time
+import cv2
+def orient_normals_safely(pcd, k=30, max_attempts=3, initial_noise=0.001):
+    """安全地进行法向量一致化"""
+    for attempt in range(max_attempts):
+        try:
+            # 尝试直接计算
+            if attempt == 0:
+                pcd.orient_normals_consistent_tangent_plane(k=k)
+                return pcd
+            
+            # 如果失败，增加噪声并重试
+            noise_level = initial_noise * (2 ** attempt)  # 逐渐增加噪声级别
+            points = np.asarray(pcd.points)
+            noise = np.random.normal(0, noise_level, points.shape)
+            
+            # 只对z坐标添加噪声，保持xy平面的结构
+            noise[:, :2] = 0  
+            points += noise
+            
+            # 更新点云并重试
+            pcd.points = o3d.utility.Vector3dVector(points)
+            pcd.orient_normals_consistent_tangent_plane(k=k)
+            return pcd
+            
+        except Exception as e:
+            if attempt == max_attempts - 1:
+                print(f"Warning: Failed to orient normals after {max_attempts} attempts")
+                # 使用备选方案：朝向质心的法向量
+                points = np.asarray(pcd.points)
+                centroid = np.mean(points, axis=0)
+                normals = points - centroid
+                normals = normals / np.linalg.norm(normals, axis=1)[:, np.newaxis]
+                pcd.normals = o3d.utility.Vector3dVector(normals)
+                return pcd
+            continue
 
 def create_point_cloud(color_path, depth_path, intrinsic, extrinsic, downsample_factor=8):
 
     color = np.array(Image.open(color_path))
-    depth = np.load(depth_path)
+    if depth_path.endswith(".npy"):
+        depth = np.load(depth_path)
+    else:
+        depth = np.array(cv2.imread(depth_path, cv2.IMREAD_UNCHANGED))
     
     h, w = depth.shape[:2]
     new_h, new_w = h//downsample_factor, w//downsample_factor
@@ -62,10 +100,10 @@ def create_point_cloud(color_path, depth_path, intrinsic, extrinsic, downsample_
         ),
         fast_normal_computation=False
     )
-
-    pcd.orient_normals_consistent_tangent_plane(k=30)
-    camera_location = np.linalg.inv(extrinsic)[:3, 3]
-    pcd.orient_normals_towards_camera_location(camera_location)
+    try:
+        pcd = orient_normals_safely(pcd, k=30)
+    except Exception as e:
+        print(f"Normal orientation failed: {e}")
 
     return pcd
 
@@ -76,10 +114,17 @@ def process_scene_point_clouds(scene_dir, output_dir):
     combined_pcd = o3d.geometry.PointCloud()
 
     start_time = time.time()
-    for frame_id in range(0, 2197, 6):
-        color_path = os.path.join(scene_dir, "images", f"{frame_id}.png")
-        depth_path = os.path.join(scene_dir, "reprojected_depths", f"{frame_id}.npy")
-        extrinsic_path = os.path.join(scene_dir, "poses", f"{frame_id}.txt")
+    colors_path = os.path.join(scene_dir, "images")
+    colors_list = os.listdir(colors_path)
+    colors_list = sorted(colors_list, key=lambda x: int(x.replace("DSC", "").split(".")[0]))
+    for color in colors_list:
+        color_path = os.path.join(scene_dir, "images", color)
+        name = color.split(".")[0]
+        if os.path.exists(os.path.join(scene_dir, "reprojected_depths", f"{name}.npy")):
+            depth_path = os.path.join(scene_dir, "reprojected_depths", f"{name}.npy")
+        else:
+            depth_path = os.path.join(scene_dir, "depths", f"{name}.png")
+        extrinsic_path = os.path.join(scene_dir, "poses", f"{name}.txt")
         
         if not all(os.path.exists(p) for p in [color_path, depth_path, extrinsic_path]):
             continue

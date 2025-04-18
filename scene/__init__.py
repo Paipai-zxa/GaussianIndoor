@@ -115,7 +115,7 @@ class Scene:
         """
         # Get all camera indices
         all_cameras = self.train_cameras[scale]
-        sorted_cameras = sorted(all_cameras, key=lambda x: int(x.image_name.split(".")[0]))
+        sorted_cameras = sorted(all_cameras, key=lambda x: int(x.image_name.replace("DSC", "").split(".")[0]))
         #查找camera在sorted_cameras中的索引
         index = sorted_cameras.index(camera)
         length = len(sorted_cameras)

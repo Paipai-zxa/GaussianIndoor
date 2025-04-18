@@ -1,4 +1,4 @@
-iterations=15000
+iterations=30000
 plane_constraint_iteration=5000
 cross_view_constraint_iteration=15000
 use_plane_constraint=False
@@ -6,8 +6,8 @@ use_cross_view_constraint=False
 # checkpoint_iterations=(5000 10000 15000)
 export CUDA_VISIBLE_DEVICES=1
 
-# for scene in 0050_00 0085_00 0114_02 0580_00 0603_00 0616_00 0617_00
-for scene in 0085_00
+# for scene in 0050_00 0114_02 0580_00 0603_00 0616_00 0617_00
+for scene in 0721_00
 do
     start_checkpoint=output/0085_00/chkpnt15000.pth
     output_path=output/${scene}
@@ -40,4 +40,3 @@ do
     python metrics.py \
         -m ${output_path}
 done
-

@@ -12,6 +12,7 @@
 import os
 import sys
 from PIL import Image
+import json
 from typing import NamedTuple
 # from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
 #     read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text
@@ -83,17 +84,24 @@ def load_scene(path, images, eval, train_test_exp, llffhold=10):
     poses_path = os.path.join(path, "poses")
     images_path = os.path.join(path, images)
     depths_path = os.path.join(path, "reprojected_depths")
+    if not os.path.exists(depths_path):
+        depths_path = os.path.join(path, "depths")
     point_cloud_path = os.path.join(path, "points3D.ply")
     intrinsics_path = os.path.join(path, "color_intrinsics.txt")
 
     intrinsics = np.loadtxt(intrinsics_path).reshape(4, 4)
     image_names = os.listdir(images_path)
+    image_names = sorted(image_names, key=lambda x: int(x.replace("DSC", "").split('.')[0]))
 
     # 划分测试集
-    test_cam_names_list = []
-    image_names = sorted(image_names, key=lambda x: int(x.split('.')[0]))
-    if eval:
-        print(f"Test set ratio: {1/llffhold}")
+    if os.path.exists(os.path.join(path, "train_test_lists.json")):
+        with open(os.path.join(path, "train_test_lists.json"), "r") as f:
+            train_test_lists = json.load(f)
+        test_cam_names_list = train_test_lists["test"]
+    else:
+        test_cam_names_list = []
+        if eval:
+            print(f"Test set ratio: {1/llffhold}")
         test_cam_names_list = image_names[::llffhold]
 
     focal_length_x = intrinsics[0, 0]
@@ -107,11 +115,16 @@ def load_scene(path, images, eval, train_test_exp, llffhold=10):
         uid = 0
         pose_path = os.path.join(poses_path, image_name.split('.')[0] + '.txt')
         pose = np.loadtxt(pose_path).reshape(4, 4)
+        if pose[0, 0] == -np.inf:
+            continue
+        pose = np.linalg.inv(pose)
         R = pose[:3, :3]
+        R = np.transpose(R)
         T = pose[:3, 3]
 
         image_path = os.path.join(images_path, image_name)
-        depth_path = os.path.join(depths_path, f"{image_name.split('.')[0]}.npy")
+        # depth_path = os.path.join(depths_path, f"{image_name.split('.')[0]}.npy")
+        depth_path = ''
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, 
                               image_path=image_path, image_name=image_name, depth_path=depth_path,

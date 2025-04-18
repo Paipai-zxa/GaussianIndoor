@@ -139,7 +139,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                     "out_observe": out_observe,
                     "normal": rendered_normal,
                     "depth": plane_depth,
-                    "rendered_distance": rendered_distance
+                    "rendered_distance": rendered_distance,
+                    "alpha": rendered_alpha
                     }   
     
     return return_dict
