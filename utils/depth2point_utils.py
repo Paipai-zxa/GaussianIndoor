@@ -135,7 +135,7 @@ def process_scene_point_clouds(scene_dir, output_dir):
         # pcd = pcd.voxel_down_sample(voxel_size=0.1)
         # pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
         combined_pcd += pcd
-    combined_pcd = combined_pcd.voxel_down_sample(voxel_size=0.025)
+    combined_pcd = combined_pcd.voxel_down_sample(voxel_size=0.05)
     combined_pcd, _ = combined_pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
 
     combined_pcd.estimate_normals(

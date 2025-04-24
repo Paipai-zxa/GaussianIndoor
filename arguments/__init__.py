@@ -46,6 +46,26 @@ class ParamGroup:
 
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        self.feat_dim = 32
+        self.n_offsets = 10
+        self.voxel_size =  0.001        
+        self.update_depth = 3
+        self.update_init_factor = 16
+        self.update_hierachy_factor = 4
+        self.use_feat_bank = False
+
+        self.lod = 0
+        self.appearance_dim = 32
+        self.lowpoly = False
+        self.ds = 1
+        self.ratio = 1 # sampling the input point cloud
+        self.undistorted = False 
+        self.add_opacity_dist = False
+        self.add_cov_dist = False
+        self.add_color_dist = False
+        #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
         self.sh_degree = 3
         self._source_path = ""
         self._model_path = ""
@@ -70,6 +90,9 @@ class PipelineParams(ParamGroup):
         self.compute_cov3D_python = False
         self.debug = False
         self.antialiasing = False
+
+        self.use_plane_constraint = False
+        self.use_cross_view_constraint = False
         
         super().__init__(parser, "Pipeline Parameters")
 
@@ -104,6 +127,50 @@ class OptimizationParams(ParamGroup):
         self.plane_constraint_weight = 0.5
         self.cross_view_constraint_weight = 0.0001
         self.num_neighbors_views = 2
+
+        self.offset_lr_init = 0.01
+        self.offset_lr_final = 0.0001
+        self.offset_lr_delay_mult = 0.01
+        self.offset_lr_max_steps = 30_000    
+
+        self.mlp_opacity_lr_init = 0.002
+        self.mlp_opacity_lr_final = 0.00002  
+        self.mlp_opacity_lr_delay_mult = 0.01
+        self.mlp_opacity_lr_max_steps = 30_000
+
+        self.mlp_cov_lr_init = 0.004
+        self.mlp_cov_lr_final = 0.004
+        self.mlp_cov_lr_delay_mult = 0.01
+        self.mlp_cov_lr_max_steps = 30_000
+        
+        self.mlp_color_lr_init = 0.008
+        self.mlp_color_lr_final = 0.00005
+        self.mlp_color_lr_delay_mult = 0.01
+        self.mlp_color_lr_max_steps = 30_000
+
+        self.mlp_color_lr_init = 0.008
+        self.mlp_color_lr_final = 0.00005
+        self.mlp_color_lr_delay_mult = 0.01
+        self.mlp_color_lr_max_steps = 30_000
+        
+        self.mlp_featurebank_lr_init = 0.01
+        self.mlp_featurebank_lr_final = 0.00001
+        self.mlp_featurebank_lr_delay_mult = 0.01
+        self.mlp_featurebank_lr_max_steps = 30_000
+
+        self.appearance_lr_init = 0.05
+        self.appearance_lr_final = 0.0005
+        self.appearance_lr_delay_mult = 0.01
+        self.appearance_lr_max_steps = 30_000   
+
+        self.start_stat = 500
+        self.update_from = 1500
+        self.update_interval = 100
+        self.update_until = 15_000
+        
+        self.min_opacity = 0.005
+        self.success_threshold = 0.8
+        self.densify_grad_threshold = 0.0002                         
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         super().__init__(parser, "Optimization Parameters")

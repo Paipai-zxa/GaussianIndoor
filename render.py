@@ -16,7 +16,7 @@ import cv2
 from tqdm import tqdm
 from os import makedirs
 import numpy as np
-from gaussian_renderer import render
+from gaussian_renderer import render, get_filter
 import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
@@ -55,7 +55,10 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(render_normals_path, exist_ok=True)
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-        renderpkg = render(view, gaussians, pipeline, background)
+        bg = background
+        # voxel_visible_mask = get_filter(view, gaussians, pipeline, bg)
+        voxel_visible_mask = None
+        renderpkg = render(view, gaussians, pipeline, bg, visible_mask=voxel_visible_mask, retain_grad=False)
         img_name = view.image_name.split(".")[0]
         rendering = renderpkg["render"]
         depth = renderpkg["depth"]
@@ -71,9 +74,23 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, separate_sh: bool, skip_mesh: bool, \
                 voxel_size: float, depth_trunc: float, sdf_trunc: float, num_cluster: int, mesh_res: int):
     with torch.no_grad():
-        gaussians = GaussianModel(dataset.sh_degree)
+        gaussians = GaussianModel(dataset.sh_degree, 
+                                  dataset.feat_dim, 
+                                  dataset.n_offsets, 
+                                  dataset.voxel_size, 
+                                  dataset.update_depth, 
+                                  dataset.update_init_factor,
+                                  dataset.update_hierachy_factor, 
+                                  dataset.use_feat_bank, 
+                                  dataset.appearance_dim,
+                                  dataset.ratio, 
+                                  dataset.add_opacity_dist, 
+                                  dataset.add_cov_dist, 
+                                  dataset.add_color_dist)  
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
 
+        gaussians.eval()
+        
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
@@ -118,7 +135,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
 
     parser.add_argument("--skip_mesh", action="store_true")
-    parser.add_argument("--voxel_size", default=-1.0, type=float, help='Mesh: voxel size for TSDF')
+    parser.add_argument("--voxel_size_TSDF", default=-1.0, type=float, help='Mesh: voxel size for TSDF')
     parser.add_argument("--depth_trunc", default=-1.0, type=float, help='Mesh: Max depth range for TSDF')
     parser.add_argument("--sdf_trunc", default=-1.0, type=float, help='Mesh: truncation value for TSDF')
     parser.add_argument("--num_cluster", default=50, type=int, help='Mesh: number of connected clusters to export')
@@ -133,4 +150,4 @@ if __name__ == "__main__":
     safe_state(args.quiet)
 
     render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, SPARSE_ADAM_AVAILABLE, \
-                args.skip_mesh, args.voxel_size, args.depth_trunc, args.sdf_trunc, args.num_cluster, args.mesh_res)
+                args.skip_mesh, args.voxel_size_TSDF, args.depth_trunc, args.sdf_trunc, args.num_cluster, args.mesh_res)
