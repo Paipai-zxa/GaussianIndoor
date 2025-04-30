@@ -33,7 +33,10 @@ class ParamGroup:
                     group.add_argument("--" + key, ("-" + key[0:1]), default=value, type=t)
             else:
                 if t == bool:
-                    group.add_argument("--" + key, default=value, action="store_true")
+                    if value is False:
+                        group.add_argument("--" + key, default=value, action="store_true")
+                    else:
+                        group.add_argument("--" + key, default=value, action="store_false")
                 else:
                     group.add_argument("--" + key, default=value, type=t)
 
@@ -46,10 +49,27 @@ class ParamGroup:
 
 class ModelParams(ParamGroup): 
     def __init__(self, parser, sentinel=False):
+        self.enable_scaffold = False
+        self.enable_training_exposure = False
+        self.enable_geo_mlp = False
+        self.opt_geo_mlp_iteration = 7000
+        self.detach_geo_mlp_input_feat = False
+        self.detach_scales_ori = False
+        self.detach_rotations_ori = False
+        self.detach_geo_rasterizer_input_means3D = False
+        self.detach_geo_rasterizer_input_means2D = False
+        self.detach_geo_rasterizer_input_means2D_abs = False
+        self.detach_geo_rasterizer_input_opacity = False
+        self.detach_geo_rasterizer_input_shs = False
+        self.detach_geo_rasterizer_input_input_all_map = False
+        self.scales_geo_after_activation = False
+        self.rotations_geo_after_activation = False
+        self.use_video_depth_anything = False
+
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         self.feat_dim = 32
         self.n_offsets = 10
-        self.voxel_size =  0.001        
+        self.voxel_size =  -1        
         self.update_depth = 3
         self.update_init_factor = 16
         self.update_hierachy_factor = 4
@@ -73,7 +93,6 @@ class ModelParams(ParamGroup):
         self._depths = ""
         self._resolution = -1
         self._white_background = False
-        self.train_test_exp = False
         self.data_device = "cuda"
         self.eval = False
 
@@ -89,11 +108,6 @@ class PipelineParams(ParamGroup):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
-        self.antialiasing = False
-
-        self.use_plane_constraint = False
-        self.use_cross_view_constraint = False
-        
         super().__init__(parser, "Pipeline Parameters")
 
 class OptimizationParams(ParamGroup):
@@ -124,9 +138,22 @@ class OptimizationParams(ParamGroup):
         self.optimizer_type = "default"
 
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-        self.plane_constraint_weight = 0.5
-        self.cross_view_constraint_weight = 0.0001
-        self.num_neighbors_views = 2
+        self.plane_constraint_weight = 0.015
+        self.cross_view_constraint_weight = 0.015
+        self.scale_flatten_weight = 100.0
+        self.num_neighbors_views = 1
+        self.use_plane_constraint = False
+        self.use_cross_view_constraint = False
+        self.use_depth_regularization = False
+        self.use_scale_flatten = False
+        self.plane_constraint_iteration = 7000
+        self.cross_view_constraint_iteration = 7000
+        self.multi_view_pixel_noise_th = 0.01
+        self.multi_view_geo_weight = 1.0
+        self.scale_flatten_iteration = 0
+
+        self.use_render_geo = False
+        self.lambda_geo = 1.0
 
         self.offset_lr_init = 0.01
         self.offset_lr_final = 0.0001
@@ -158,6 +185,11 @@ class OptimizationParams(ParamGroup):
         self.mlp_featurebank_lr_delay_mult = 0.01
         self.mlp_featurebank_lr_max_steps = 30_000
 
+        self.geo_mlp_lr_init = 0.004
+        self.geo_mlp_lr_final = 0.004
+        self.geo_mlp_lr_delay_mult = 0.01
+        self.geo_mlp_lr_max_steps = 30_000
+
         self.appearance_lr_init = 0.05
         self.appearance_lr_final = 0.0005
         self.appearance_lr_delay_mult = 0.01
@@ -170,7 +202,20 @@ class OptimizationParams(ParamGroup):
         
         self.min_opacity = 0.005
         self.success_threshold = 0.8
-        self.densify_grad_threshold = 0.0002                         
+        self.densify_grad_threshold = 0.0002      
+
+        #### sdf
+        self.enable_sdf_guidance = False
+        self.is_recal_split = False
+        self.is_recal_prune = False
+        self.densification_threshold = 0.95
+        self.pruning_threshold = 0.002
+        self.sdf_guidance_start_iter = 15000
+        self.sdf_guidance_end_iter = 25000
+        self.sdf_guidance_interval = 100
+        self.grad_sdf_omega = 0.0002
+        self.is_apply_grad_sdf_omega = False
+
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         super().__init__(parser, "Optimization Parameters")

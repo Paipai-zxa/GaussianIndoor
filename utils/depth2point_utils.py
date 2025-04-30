@@ -107,7 +107,7 @@ def create_point_cloud(color_path, depth_path, intrinsic, extrinsic, downsample_
 
     return pcd
 
-def process_scene_point_clouds(scene_dir, output_dir):
+def process_scene_point_clouds(scene_dir, output_dir, is_depth_anything=False):
     # 读取内参
     intrinsic = np.loadtxt(os.path.join(scene_dir, "color_intrinsics.txt"))
 
@@ -120,10 +120,13 @@ def process_scene_point_clouds(scene_dir, output_dir):
     for color in colors_list:
         color_path = os.path.join(scene_dir, "images", color)
         name = color.split(".")[0]
-        if os.path.exists(os.path.join(scene_dir, "reprojected_depths", f"{name}.npy")):
-            depth_path = os.path.join(scene_dir, "reprojected_depths", f"{name}.npy")
+        if is_depth_anything:
+            depth_path = os.path.join(scene_dir, "video_depth_anything", f"{name}.png")
         else:
-            depth_path = os.path.join(scene_dir, "depths", f"{name}.png")
+            if os.path.exists(os.path.join(scene_dir, "reprojected_depths", f"{name}.npy")):
+                depth_path = os.path.join(scene_dir, "reprojected_depths", f"{name}.npy")
+            else:
+                depth_path = os.path.join(scene_dir, "depths", f"{name}.png")
         extrinsic_path = os.path.join(scene_dir, "poses", f"{name}.txt")
         
         if not all(os.path.exists(p) for p in [color_path, depth_path, extrinsic_path]):
@@ -146,8 +149,12 @@ def process_scene_point_clouds(scene_dir, output_dir):
         fast_normal_computation=False
     )
     
+    out_pcd_path = os.path.join(output_dir, f"points3D.ply")
+    if is_depth_anything:
+        out_pcd_path = os.path.join(output_dir, f"points3D_depth_anything.ply")
+
     o3d.io.write_point_cloud(
-        os.path.join(output_dir, f"points3D.ply"), 
+        out_pcd_path, 
         combined_pcd,
         write_ascii=False, 
         compressed=False
@@ -162,5 +169,6 @@ def process_scene_point_clouds(scene_dir, output_dir):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--scene_dir", type=str)
+    parser.add_argument("--is_depth_anything", action="store_true")
     args = parser.parse_args()
-    process_scene_point_clouds(args.scene_dir, args.scene_dir)
+    process_scene_point_clouds(args.scene_dir, args.scene_dir, args.is_depth_anything)

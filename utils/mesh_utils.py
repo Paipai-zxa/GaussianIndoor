@@ -19,6 +19,108 @@ from functools import partial
 import open3d as o3d
 import trimesh
 
+
+def save_tsdf_as_pointcloud(tsdf, samples, filename="tsdf.ply"):
+    """
+    将 TSDF 保存为点云文件
+    
+    Args:
+        tsdf: TSDF 值数组
+        samples: 采样点坐标
+        filename: 输出文件名
+    """
+    # 将 TSDF 值转换为颜色
+    # 使用颜色映射：负值（内部）为蓝色，正值（外部）为红色，0（表面）为绿色
+    colors = np.zeros((len(tsdf), 3))
+    
+    # 归一化 TSDF 值到 [0,1] 用于颜色映射
+    tsdf_normalized = (tsdf - tsdf.min()) / (tsdf.max() - tsdf.min())
+    
+    # 创建颜色映射
+    colors[tsdf < 0, 2] = 1 - tsdf_normalized[tsdf < 0]  # 蓝色通道
+    colors[tsdf > 0, 0] = tsdf_normalized[tsdf > 0]      # 红色通道
+    # 绿色
+    colors[tsdf == 0, 1] = 1
+    
+    # 创建点云
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(samples)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+    
+    # 保存点云
+    o3d.io.write_point_cloud(filename, pcd)
+    
+    # 也可以保存为其他格式
+    # o3d.io.write_point_cloud("tsdf.xyz", pcd)  # XYZ 格式
+    # o3d.io.write_point_cloud("tsdf.pcd", pcd)  # PCD 格式
+
+def save_raw_sdf_as_pointcloud(sdf, samples, densify_mask=None, prune_mask=None, filename="raw_sdf.ply"):
+    """
+    改进颜色映射，增加 densify 和 prune mask 的可视化
+    """
+    # 将 tensor 转换为 numpy
+    if torch.is_tensor(sdf):
+        sdf = sdf.cpu().numpy()
+    if torch.is_tensor(samples):
+        samples = samples.cpu().numpy()
+    if torch.is_tensor(densify_mask):
+        densify_mask = densify_mask.cpu().numpy()
+    if torch.is_tensor(prune_mask):
+        prune_mask = prune_mask.cpu().numpy()
+    
+    colors = np.ones((len(sdf), 3)) * 0.5  # 初始化为灰色
+    
+    # 归一化 SDF，但保持符号
+    sdf_max = np.abs(sdf).max()
+    sdf_normalized = sdf / sdf_max  # 范围在 [-1, 1]
+    
+    # 基础 SDF 颜色映射
+    # 内部点（负值）：蓝色
+    mask_inside = sdf < 0
+    colors[mask_inside] = np.array([0, 0, 1])  # 基础蓝色
+    brightness = 0.5 + 0.5 * np.abs(sdf_normalized[mask_inside])
+    colors[mask_inside] *= brightness[:, None]
+    
+    # 外部点（正值）：红色
+    mask_outside = sdf > 0
+    colors[mask_outside] = np.array([1, 0, 0])  # 基础红色
+    brightness = 0.5 + 0.5 * sdf_normalized[mask_outside]
+    colors[mask_outside] *= brightness[:, None]
+    
+    # 表面点：绿色
+    mask_surface = np.abs(sdf) < sdf_max * 0.01
+    colors[mask_surface] = np.array([0, 1, 0])
+    
+    # 添加 densify 和 prune mask 的可视化
+    if densify_mask is not None:
+        # 需要加密的点：黄色
+        colors[densify_mask] = np.array([1, 1, 0])  # 黄色
+    
+    if prune_mask is not None:
+        # 需要剪枝的点：紫色
+        colors[prune_mask] = np.array([1, 0, 1])  # 紫色
+    
+    # 打印统计信息
+    print(f"SDF 统计:")
+    print(f"最大值: {sdf.max():.6f}")
+    print(f"最小值: {sdf.min():.6f}")
+    print(f"内部点数量: {np.sum(mask_inside)}")
+    print(f"外部点数量: {np.sum(mask_outside)}")
+    print(f"表面点数量: {np.sum(mask_surface)}")
+    if densify_mask is not None:
+        print(f"需要加密的点数量: {np.sum(densify_mask)}")
+    if prune_mask is not None:
+        print(f"需要剪枝的点数量: {np.sum(prune_mask)}")
+    
+    # 创建点云
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(samples)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+    
+    # 保存点云
+    o3d.io.write_point_cloud(filename, pcd)
+
+
 def post_process_mesh(mesh, cluster_to_keep=1000):
     """
     Post-process a mesh to filter out floaters and disconnected parts
@@ -81,14 +183,11 @@ class GaussianExtractor(object):
     @torch.no_grad()
     def clean(self):
         self.depthmaps = []
-        self.alphamaps = []
         self.rgbmaps = []
-        self.normals = []
-        self.depth_normals = []
         self.viewpoint_stack = []
 
     @torch.no_grad()
-    def reconstruction(self, viewpoint_stack, gaussians):
+    def reconstruction(self, viewpoint_stack):
         """
         reconstruct radiance field given cameras
         """
@@ -102,6 +201,7 @@ class GaussianExtractor(object):
             viewpoint_cam.camera_center = viewpoint_cam.camera_center.to(device="cuda")
 
             render_pkg = self.render(viewpoint_cam, self.gaussians)
+            
             rgb = render_pkg['render']
             depth = render_pkg['depth']
             self.rgbmaps.append(rgb.to(device="cuda"))
@@ -109,9 +209,9 @@ class GaussianExtractor(object):
         
         self.rgbmaps = torch.stack(self.rgbmaps, dim=0)
         self.depthmaps = torch.stack(self.depthmaps, dim=0)
-        self.estimate_bounding_sphere()
+        
 
-    def estimate_bounding_sphere(self):
+    def estimate_bounding_sphere(self, radius=None):
         """
         Estimate the bounding sphere given camera pose
         """
@@ -120,7 +220,11 @@ class GaussianExtractor(object):
         c2ws = np.array([np.linalg.inv(np.asarray((cam.world_view_transform.T).cpu().numpy())) for cam in self.viewpoint_stack])
         poses = c2ws[:,:3,:] @ np.diag([1, -1, -1, 1])
         center = (focus_point_fn(poses))
-        self.radius = np.linalg.norm(c2ws[:,:3,3] - center, axis=-1).min()
+        # self.radius = np.linalg.norm(c2ws[:,:3,3] - center, axis=-1).min()
+        if radius is None:
+            self.radius = np.linalg.norm(c2ws[:,:3,3] - center, axis=-1).min()
+        else:
+            self.radius = radius
         self.center = torch.from_numpy(center).float().cuda()
         print(f"The estimated bounding radius is {self.radius:.2f}")
         print(f"Use at least {2.0 * self.radius:.2f} for depth_trunc")
@@ -166,7 +270,7 @@ class GaussianExtractor(object):
         return mesh
 
     @torch.no_grad()
-    def extract_mesh_unbounded(self, resolution=1024):
+    def extract_mesh_unbounded(self, resolution=1024, radius=None):
         """
         Experimental features, extracting meshes from unbounded scenes, not fully test across datasets. 
         return o3d.mesh
@@ -191,6 +295,29 @@ class GaussianExtractor(object):
             sampled_rgb = torch.nn.functional.grid_sample(rgbmap.cuda()[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(3,-1).T
             sdf = (sampled_depth-z)
             return sdf, sampled_rgb, mask_proj
+
+        def compute_raw_sdf(samples, inv_contraction):
+            """
+            只计算原始的 SDF 值，不进行 TSDF 融合
+            """
+            if inv_contraction is not None:
+                samples = inv_contraction(samples)
+
+            # 初始化 SDF 数组
+            sdf_values = torch.zeros_like(samples[:,0])
+
+            for i, viewpoint_cam in tqdm(enumerate(self.viewpoint_stack), desc="Raw SDF computation"):
+                sdf, _, mask_proj = compute_sdf_perframe(i, samples,
+                    depthmap = self.depthmaps[i],
+                    rgbmap = self.rgbmaps[i],
+                    viewpoint_cam=self.viewpoint_stack[i],
+                )
+                
+                # 只保留有效的 SDF 值
+                sdf = sdf.flatten()
+                sdf_values[mask_proj] = sdf[mask_proj]
+            
+            return sdf_values
 
         def compute_unbounded_tsdf(samples, inv_contraction, voxel_size, return_rgb=False):
             """
@@ -231,7 +358,7 @@ class GaussianExtractor(object):
                 return tsdfs, rgbs
 
             return tsdfs
-
+        self.estimate_bounding_sphere(radius)
         normalize = lambda x: (x - self.center) / self.radius
         unnormalize = lambda x: (x * self.radius) + self.center
         inv_contraction = lambda x: unnormalize(uncontract(x))
@@ -243,7 +370,14 @@ class GaussianExtractor(object):
         sdf_function = lambda x: compute_unbounded_tsdf(x, inv_contraction, voxel_size)
         from utils.mcube_utils import marching_cubes_with_contraction
         
-        R = contract(normalize(self.gaussians.get_anchor)).norm(dim=-1).cpu().numpy()
+        # gaussians_tsdf = compute_unbounded_tsdf(self.gaussians.get_xyz, None, voxel_size)
+        # save_tsdf_as_pointcloud(gaussians_tsdf.cpu().numpy(), self.gaussians.get_xyz.cpu().numpy(), filename=f"tsdf_test.ply")
+        
+        # gaussians_sdf = compute_raw_sdf(self.gaussians.get_xyz, None)
+        # save_raw_sdf_as_pointcloud(gaussians_sdf.cpu().numpy(), self.gaussians.get_xyz.cpu().numpy(), filename=f"sdf_test.ply")
+        # breakpoint()
+
+        R = contract(normalize(self.gaussians.get_xyz())).norm(dim=-1).cpu().numpy()
         R = np.quantile(R, q=0.95)
         R = min(R+0.01, 1.9)
 
@@ -264,18 +398,87 @@ class GaussianExtractor(object):
         mesh.vertex_colors = o3d.utility.Vector3dVector(rgbs.cpu().numpy())
         return mesh
 
-    @torch.no_grad()
-    def export_image(self, path):
-        render_path = os.path.join(path, "renders")
-        gts_path = os.path.join(path, "gt")
-        vis_path = os.path.join(path, "vis")
-        os.makedirs(render_path, exist_ok=True)
-        os.makedirs(vis_path, exist_ok=True)
-        os.makedirs(gts_path, exist_ok=True)
-        for idx, viewpoint_cam in tqdm(enumerate(self.viewpoint_stack), desc="export images"):
-            gt = viewpoint_cam.original_image[0:3, :, :]
-            save_img_u8(gt.permute(1,2,0).cpu().numpy(), os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
-            save_img_u8(self.rgbmaps[idx].permute(1,2,0).cpu().numpy(), os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
-            save_img_f32(self.depthmaps[idx][0].cpu().numpy(), os.path.join(vis_path, 'depth_{0:05d}'.format(idx) + ".tiff"))
-            save_img_u8(self.normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'normal_{0:05d}'.format(idx) + ".png"))
-            save_img_u8(self.depth_normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'depth_normal_{0:05d}'.format(idx) + ".png"))
+
+def extract_gaussians_sdf(rgbmaps, depthmaps, viewpoint_stack, samples):
+    """
+    提取高斯分布的 SDF 值
+    """
+
+    def compute_sdf_perframe(i, points, depthmap, rgbmap, viewpoint_cam):
+        """
+            compute per frame sdf
+        """
+        new_points = torch.cat([points, torch.ones_like(points[...,:1])], dim=-1) @ viewpoint_cam.full_proj_transform
+        z = new_points[..., -1:]
+        pix_coords = (new_points[..., :2] / new_points[..., -1:])
+        mask_proj = ((pix_coords > -1. ) & (pix_coords < 1.) & (z > 0)).all(dim=-1)
+        sampled_depth = torch.nn.functional.grid_sample(depthmap.cuda()[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(-1, 1)
+        sampled_rgb = torch.nn.functional.grid_sample(rgbmap.cuda()[None], pix_coords[None, None], mode='bilinear', padding_mode='border', align_corners=True).reshape(3,-1).T
+        sdf = (sampled_depth-z)
+        return sdf, sampled_rgb, mask_proj
+
+    def compute_raw_sdf(samples, inv_contraction):
+        """
+        只计算原始的 SDF 值，不进行 TSDF 融合
+        """
+        if inv_contraction is not None:
+            samples = inv_contraction(samples)
+
+        # 初始化 SDF 数组
+        sdf_values = torch.zeros_like(samples[:,0])
+
+        for i, viewpoint_cam in enumerate(viewpoint_stack):
+            sdf, _, mask_proj = compute_sdf_perframe(i, samples,
+                depthmap = depthmaps[i],
+                rgbmap = rgbmaps[i],
+                viewpoint_cam=viewpoint_stack[i],
+            )
+            
+            # 只保留有效的 SDF 值
+            sdf = sdf.flatten()
+            sdf_values[mask_proj] = sdf[mask_proj]
+        
+        return sdf_values
+
+    gaussians_sdf = compute_raw_sdf(samples, None)
+
+    return gaussians_sdf
+
+
+@torch.no_grad()
+def reconstruction(viewpoint_stack, gaussians, render, pipe, bg):
+    """
+    reconstruct radiance field given cameras
+    """
+    rgbmaps = []
+    depthmaps = []
+    for i, viewpoint_cam in enumerate(viewpoint_stack):
+        # turn camera data to cuda
+        viewpoint_cam.world_view_transform = viewpoint_cam.world_view_transform.to(device="cuda")
+        viewpoint_cam.projection_matrix = viewpoint_cam.projection_matrix.to(device="cuda")
+        viewpoint_cam.full_proj_transform = viewpoint_cam.full_proj_transform.to(device="cuda")
+        viewpoint_cam.camera_center = viewpoint_cam.camera_center.to(device="cuda")
+
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+        
+        rgb = render_pkg['render']
+        depth = render_pkg['depth']
+        rgbmaps.append(rgb.to(device="cuda"))
+        depthmaps.append(depth.to(device="cuda"))
+    
+    rgbmaps = torch.stack(rgbmaps, dim=0)
+    depthmaps = torch.stack(depthmaps, dim=0)
+
+    return rgbmaps, depthmaps
+
+@torch.no_grad()
+def extract_sdf_guidance(viewpoint_stack, gaussians, render, pipe, bg):
+    rgbmaps, depthmaps = reconstruction(viewpoint_stack, gaussians, render, pipe, bg)
+    gaussians_sdf = extract_gaussians_sdf(rgbmaps, depthmaps, viewpoint_stack, gaussians.get_xyz)
+
+    def gaussian_fun(s, sigma):
+        return torch.exp((-s**2)/(2*torch.square(sigma)))
+
+    sdf_guidance =  gaussian_fun(gaussians_sdf, gaussians.get_opacity.squeeze())
+
+    return gaussians_sdf, sdf_guidance

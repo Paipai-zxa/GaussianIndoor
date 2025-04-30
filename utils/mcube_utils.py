@@ -13,6 +13,7 @@ import numpy as np
 import torch
 import trimesh
 from skimage import measure
+
 # modified from here https://github.com/autonomousvision/sdfstudio/blob/370902a10dbef08cb3fe4391bd3ed1e227b5c165/nerfstudio/utils/marching_cubes.py#L201
 def marching_cubes_with_contraction(
     sdf,
@@ -58,7 +59,8 @@ def marching_cubes_with_contraction(
                 @torch.no_grad()
                 def evaluate(points):
                     z = []
-                    for _, pnts in enumerate(torch.split(points, 256**3, dim=0)):
+                    # for _, pnts in enumerate(torch.split(points, 256**3, dim=0)):
+                    for _, pnts in enumerate(torch.split(points, 512**3, dim=0)):
                         z.append(sdf(pnts))
                     z = torch.cat(z, axis=0)
                     return z

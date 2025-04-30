@@ -12,15 +12,14 @@
 import torch
 from torch import nn
 import numpy as np
-from utils.graphics_utils import getWorld2View2, getProjectionMatrix
+from utils.graphics_utils import getWorld2View2, getProjectionMatrix, fov2focal
 from utils.general_utils import PILtoTorch
 import cv2
 
 class Camera(nn.Module):
     def __init__(self, resolution, colmap_id, R, T, FoVx, FoVy, image, invdepthmap,
                  image_name, uid,
-                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda",
-                 train_test_exp = False, is_test_dataset = False, is_test_view = False
+                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda"
                  ):
         super(Camera, self).__init__()
 
@@ -47,36 +46,27 @@ class Camera(nn.Module):
         else: 
             self.alpha_mask = torch.ones_like(resized_image_rgb[0:1, ...].to(self.data_device))
 
-        if train_test_exp and is_test_view:
-            if is_test_dataset:
-                self.alpha_mask[..., :self.alpha_mask.shape[-1] // 2] = 0
-            else:
-                self.alpha_mask[..., self.alpha_mask.shape[-1] // 2:] = 0
-
         self.original_image = gt_image.clamp(0.0, 1.0).to(self.data_device)
         self.image_width = self.original_image.shape[2]
         self.image_height = self.original_image.shape[1]
+        self.Cx = self.image_width / 2
+        self.Cy = self.image_height / 2
+        self.Fx = fov2focal(FoVx, self.image_width)
+        self.Fy = fov2focal(FoVy, self.image_height)
 
         self.invdepthmap = None
         self.depth_reliable = False
         if invdepthmap is not None:
-            self.depth_mask = torch.ones_like(self.alpha_mask)
-            self.invdepthmap = cv2.resize(invdepthmap, resolution)
+            self.invdepthmap = cv2.resize(invdepthmap, resolution, interpolation=cv2.INTER_LINEAR)
             self.invdepthmap = invdepthmap
             self.invdepthmap[self.invdepthmap < 0] = 0
+            self.depth_mask = self.invdepthmap > 0
             self.depth_reliable = True
-
-            # if depth_params is not None:
-            #     if depth_params["scale"] < 0.2 * depth_params["med_scale"] or depth_params["scale"] > 5 * depth_params["med_scale"]:
-            #         self.depth_reliable = False
-            #         self.depth_mask *= 0
-                
-            #     if depth_params["scale"] > 0:
-            #         self.invdepthmap = self.invdepthmap * depth_params["scale"] + depth_params["offset"]
 
             if self.invdepthmap.ndim != 2:
                 self.invdepthmap = self.invdepthmap[..., 0]
             self.invdepthmap = torch.from_numpy(self.invdepthmap[None]).to(self.data_device)
+            self.depth_mask = torch.from_numpy(self.depth_mask[None]).to(self.data_device)
 
         self.zfar = 100.0
         self.znear = 0.01
@@ -88,7 +78,17 @@ class Camera(nn.Module):
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda()
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
-        
+
+    def get_rays(self, scale=1.0):
+        W, H = int(self.image_width/scale), int(self.image_height/scale)
+        ix, iy = torch.meshgrid(
+            torch.arange(W), torch.arange(H), indexing='xy')
+        rays_d = torch.stack(
+                    [(ix-self.Cx/scale) / self.Fx * scale,
+                    (iy-self.Cy/scale) / self.Fy * scale,
+                    torch.ones_like(ix)], -1).float().cuda()
+        return rays_d
+
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
         self.image_width = width

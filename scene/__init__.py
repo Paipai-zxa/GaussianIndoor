@@ -14,15 +14,16 @@ import random
 import json
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import load_scene
-from scene.gaussian_model import GaussianModel
+from scene.gaussian_model_scaffold import GaussianModel as ScaffoldGaussianModel
+from scene.gaussian_model_vanilla import GaussianModel as VanillaGaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
 class Scene:
 
-    gaussians : GaussianModel
+    gaussians : VanillaGaussianModel
 
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0], ply_path=None):
+    def __init__(self, args : ModelParams, gaussians : VanillaGaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -40,16 +41,12 @@ class Scene:
         self.train_cameras = {}
         self.test_cameras = {}
 
-        scene_info = load_scene(args.source_path, args.images, args.eval, args.train_test_exp)
+        scene_info = load_scene(args.source_path, args.images, args.eval, use_video_depth_anything=args.use_video_depth_anything)
         self.gaussians.set_appearance(len(scene_info.train_cameras))
 
         if not self.loaded_iter:
-            if ply_path is not None:
-                with open(ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
-                    dest_file.write(src_file.read())
-            else:
-                with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
-                    dest_file.write(src_file.read())
+            with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
+                dest_file.write(src_file.read())
             json_cams = []
             camlist = []
             if scene_info.test_cameras:
@@ -69,32 +66,21 @@ class Scene:
 
         for resolution_scale in resolution_scales:
             print("Loading Training Cameras")
-            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, scene_info.is_nerf_synthetic, False)
+            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, scene_info.is_nerf_synthetic)
             print("Loading Test Cameras")
-            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, scene_info.is_nerf_synthetic, True)
+            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, scene_info.is_nerf_synthetic)
 
         if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
-            self.gaussians.load_mlp_checkpoints(os.path.join(self.model_path,
-                                                           "point_cloud",
-                                                           "iteration_" + str(self.loaded_iter)))
         else:
-            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
+            self.gaussians.create_from_pcd(scene_info.point_cloud, scene_info.train_cameras, self.cameras_extent)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
-        self.gaussians.save_mlp_checkpoints(point_cloud_path)
-        # exposure_dict = {
-        #     image_name: self.gaussians.get_exposure_from_name(image_name).detach().cpu().numpy().tolist()
-        #     for image_name in self.gaussians.exposure_mapping
-        # }
-
-        # with open(os.path.join(self.model_path, "exposure.json"), "w") as f:
-        #     json.dump(exposure_dict, f, indent=2)
 
     def getTrainCameras(self, scale=1.0):
         return self.train_cameras[scale]

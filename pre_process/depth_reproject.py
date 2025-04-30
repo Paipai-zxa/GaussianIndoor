@@ -65,10 +65,9 @@ def main():
     K_color = torch.from_numpy(K_color[:3, :3]).float().cuda()
 
     depth_files = os.listdir(depth_path)
-    scene_name = depth_path.split("/")[5]
 
     # 使用tqdm显示进度
-    with tqdm.tqdm(total=len(depth_files), desc=f"Scene: {scene_name}") as t:
+    with tqdm.tqdm(total=len(depth_files)) as t:
         for depth_file in depth_files:
             # 读取深度图
             depth_image = cv2.imread(

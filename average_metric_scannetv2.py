@@ -1,6 +1,6 @@
 import os
 import json
-exp_name = "-scaffold"
+exp_name = "train_depth_1000000_100000_wo_detachall_2025"
 path = "output/scannetv2"
 scene_list = os.listdir(path)
 scene_list = [scene for scene in scene_list if not scene.endswith(".json")]
@@ -35,6 +35,6 @@ average_fscore = sum([metric["F-score"] for metric in metrics_mesh]) / len(metri
 print(f"SSIM: {average_ssim}\nPSNR: {average_psnr}\nLPIPS: {average_lpips}")
 print(f"Accuracy: {average_accuracy}\nCompletion: {average_completion}\nPrecision: {average_precision}\nRecall: {average_recall}\nF-score: {average_fscore}")
 # 存储为json文件，该文件不一定存在
-if not os.path.exists(f"output/average_metric_scannetv2_{exp_name}.json"):
-    with open(f"output/average_metric_scannetv2_{exp_name}.json", "w") as f:
-        json.dump({"SSIM": average_ssim, "PSNR": average_psnr, "LPIPS": average_lpips, "Accuracy": average_accuracy, "Completion": average_completion, "Precision": average_precision, "Recall": average_recall, "F-score": average_fscore}, f, indent=4)
+with open(f"output/average_metric_scannetv2_{exp_name}.json", "w") as f:
+    json.dump({"SSIM": average_ssim, "PSNR": average_psnr, "LPIPS": average_lpips, "Accuracy": average_accuracy, "Completion": average_completion, "Precision": average_precision, "Recall": average_recall, "F-score": average_fscore}, f, indent=4)
+    f.write(f"\n{average_ssim}\t{average_psnr}\t{average_lpips}\t{average_accuracy}\t{average_completion}\t{average_precision}\t{average_recall}\t{average_fscore}")

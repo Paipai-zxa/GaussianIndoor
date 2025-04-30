@@ -11,17 +11,18 @@
 
 import torch
 from scene import Scene
+import random
+import numpy as np
 import os
 import cv2
 from tqdm import tqdm
 from os import makedirs
 import numpy as np
-from gaussian_renderer import render, get_filter
+from gaussian_renderer import vanilla_render, scaffold_render, get_filter
 import torchvision
-from utils.general_utils import safe_state
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
-from gaussian_renderer import GaussianModel
+from gaussian_renderer import ScaffoldGaussianModel, VanillaGaussianModel
 from utils.mesh_utils import GaussianExtractor, post_process_mesh
 import open3d as o3d
 try:
@@ -43,7 +44,8 @@ def visualize_normal(normal):
     normal_viz = cv2.cvtColor(normal_viz, cv2.COLOR_RGB2BGR)
     return normal_viz
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background, train_test_exp, separate_sh):
+def render_set(dataset, name, iteration, views, gaussians, pipeline, background):
+    model_path = dataset.model_path
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     render_depths_path = os.path.join(model_path, name, "ours_{}".format(iteration), "render_depths")
     render_normals_path = os.path.join(model_path, name, "ours_{}".format(iteration), "render_normals")
@@ -56,9 +58,9 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         bg = background
-        # voxel_visible_mask = get_filter(view, gaussians, pipeline, bg)
-        voxel_visible_mask = None
-        renderpkg = render(view, gaussians, pipeline, bg, visible_mask=voxel_visible_mask, retain_grad=False)
+        render_func = scaffold_render if dataset.enable_scaffold else vanilla_render
+        renderpkg = render_func(view, gaussians, pipeline, bg)
+
         img_name = view.image_name.split(".")[0]
         rendering = renderpkg["render"]
         depth = renderpkg["depth"]
@@ -71,10 +73,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         cv2.imwrite(os.path.join(render_depths_path, img_name + ".png"), depth_viz)
         cv2.imwrite(os.path.join(render_normals_path, img_name + ".png"), normal_viz)
 
-def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, separate_sh: bool, skip_mesh: bool, \
-                voxel_size: float, depth_trunc: float, sdf_trunc: float, num_cluster: int, mesh_res: int):
+def render_sets(args, dataset : ModelParams, iteration : int, pipeline : PipelineParams):
+
     with torch.no_grad():
-        gaussians = GaussianModel(dataset.sh_degree, 
+        if args.enable_scaffold:
+            gaussians = ScaffoldGaussianModel(dataset.sh_degree, 
                                   dataset.feat_dim, 
                                   dataset.n_offsets, 
                                   dataset.voxel_size, 
@@ -86,7 +89,27 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
                                   dataset.ratio, 
                                   dataset.add_opacity_dist, 
                                   dataset.add_cov_dist, 
-                                  dataset.add_color_dist)  
+                                  dataset.add_color_dist)
+        else:
+            gaussians = VanillaGaussianModel(dataset.sh_degree,
+                                            enable_training_exposure = dataset.enable_training_exposure,
+                                            enable_geo_mlp = dataset.enable_geo_mlp,
+                                            feat_dim = dataset.feat_dim,
+                                            use_feat_bank = dataset.use_feat_bank,
+                                            add_cov_dist = dataset.add_cov_dist,
+                                            detach_geo_mlp_input_feat = dataset.detach_geo_mlp_input_feat,
+                                            detach_scales_ori = dataset.detach_scales_ori,
+                                            detach_rotations_ori = dataset.detach_rotations_ori,
+                                            detach_geo_rasterizer_input_means3D = dataset.detach_geo_rasterizer_input_means3D,
+                                            detach_geo_rasterizer_input_means2D = dataset.detach_geo_rasterizer_input_means2D,
+                                            detach_geo_rasterizer_input_means2D_abs = dataset.detach_geo_rasterizer_input_means2D_abs,
+                                            detach_geo_rasterizer_input_opacity = dataset.detach_geo_rasterizer_input_opacity,
+                                            detach_geo_rasterizer_input_shs = dataset.detach_geo_rasterizer_input_shs,
+                                            detach_geo_rasterizer_input_input_all_map = dataset.detach_geo_rasterizer_input_input_all_map,
+                                            scales_geo_after_activation = dataset.scales_geo_after_activation,
+                                            rotations_geo_after_activation = dataset.rotations_geo_after_activation,
+                                            opt_geo_mlp_iteration = dataset.opt_geo_mlp_iteration)
+
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
 
         gaussians.eval()
@@ -94,34 +117,39 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-        if not skip_train:
-             render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh)
+        if not args.skip_train:
+             render_set(dataset, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
 
-        if not skip_test:
-             render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, dataset.train_test_exp, separate_sh)
+        if not args.skip_test:
+             render_set(dataset, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
 
-        if not skip_mesh:
-            gaussExtractor = GaussianExtractor(gaussians, render, pipeline, bg_color=bg_color)    
+        if not args.skip_mesh:
+            render_func = scaffold_render if dataset.enable_scaffold else vanilla_render
+            gaussExtractor = GaussianExtractor(gaussians, render_func, pipeline, bg_color=bg_color)    
             print("export mesh ...")
             # set the active_sh to 0 to export only diffuse texture
             # gaussExtractor.gaussians.active_sh_degree = 0
-            gaussExtractor.reconstruction(scene.getTrainCameras(), gaussians)
-            # gaussExtractor.reconstruction(scene.getTestMeshCameras(), gaussians)
+            
+            gaussExtractor.reconstruction(scene.getTrainCameras())
+            # gaussExtractor.reconstruction(scene.getTestCameras())
             # extract the mesh and save
 
-            name = 'fuse_unbounded.ply'
-            mesh = gaussExtractor.extract_mesh_unbounded(resolution=mesh_res)
+            # name = 'fuse_unbounded.ply'
+            # radius = None if args.depth_trunc < 0  else args.depth_trunc / 2
+            # mesh = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res, radius=radius)
 
-            # name = 'fuse.ply'
-            # depth_trunc = (gaussExtractor.radius * 2.0) if depth_trunc < 0  else depth_trunc
-            # voxel_size = (depth_trunc / mesh_res) if voxel_size < 0 else voxel_size
-            # sdf_trunc = 5.0 * voxel_size if sdf_trunc < 0 else sdf_trunc
-            # mesh = gaussExtractor.extract_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
+            # gaussians_sdf = gaussExtractor.extract_gaussians_sdf()
+
+            name = 'fuse.ply'
+            depth_trunc = (gaussExtractor.radius * 2.0) if args.depth_trunc < 0  else args.depth_trunc
+            voxel_size = (depth_trunc / args.mesh_res) if args.voxel_size_TSDF < 0 else args.voxel_size_TSDF
+            sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc
+            mesh = gaussExtractor.extract_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
             
             o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name), mesh)
             print("mesh saved at {}".format(os.path.join(dataset.model_path, name)))
             # post-process the mesh and save, saving the largest N clusters
-            mesh_post = post_process_mesh(mesh, cluster_to_keep=num_cluster)
+            mesh_post = post_process_mesh(mesh, cluster_to_keep=args.num_cluster)
             o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_post.ply')), mesh_post)
             print("mesh post processed saved at {}".format(os.path.join(dataset.model_path, name.replace('.ply', '_post.ply'))))
 
@@ -141,13 +169,13 @@ if __name__ == "__main__":
     parser.add_argument("--num_cluster", default=50, type=int, help='Mesh: number of connected clusters to export')
     parser.add_argument("--mesh_res", default=256, type=int, help='Mesh: resolution for unbounded mesh extraction')
 
-
-    parser.add_argument("--quiet", action="store_true")
     args = get_combined_args(parser)
     print("Rendering " + args.model_path)
 
-    # Initialize system state (RNG)
-    safe_state(args.quiet)
+    random.seed(2025)
+    np.random.seed(2025)
+    torch.manual_seed(2025)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-    render_sets(model.extract(args), args.iteration, pipeline.extract(args), args.skip_train, args.skip_test, SPARSE_ADAM_AVAILABLE, \
-                args.skip_mesh, args.voxel_size_TSDF, args.depth_trunc, args.sdf_trunc, args.num_cluster, args.mesh_res)
+    render_sets(args, model.extract(args), args.iteration, pipeline.extract(args))
