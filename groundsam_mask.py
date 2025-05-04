@@ -83,7 +83,7 @@ def generate_mask(img_name, args, dino_model, sam_predictor, config, id2label, T
     instance_id, instance_id_good = 1, 1 # 1 is the stuff
     for i in range(transformed_boxes.shape[0]):
         # try:
-        if (transformed_boxes[i][2].item()-transformed_boxes[i][0].item())>W*0.7 and (transformed_boxes[i][3].item()-transformed_boxes[i][1].item())>H*0.7:
+        if (transformed_boxes[i][2].item()-transformed_boxes[i][0].item())>W*0.95 and (transformed_boxes[i][3].item()-transformed_boxes[i][1].item())>H*0.95:
             continue
         else:
             masks, de1, de2 = sam_predictor.predict_torch(

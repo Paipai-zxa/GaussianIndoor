@@ -65,7 +65,7 @@ class ModelParams(ParamGroup):
         self.scales_geo_after_activation = False
         self.rotations_geo_after_activation = False
         self.use_video_depth_anything = False
-
+        self.is_train_on_all_images = False
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         self.feat_dim = 32
         self.n_offsets = 10

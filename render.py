@@ -134,18 +134,21 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
             # gaussExtractor.reconstruction(scene.getTestCameras())
             # extract the mesh and save
 
-            # name = 'fuse_unbounded.ply'
-            # radius = None if args.depth_trunc < 0  else args.depth_trunc / 2
-            # mesh = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res, radius=radius)
-
-            # gaussians_sdf = gaussExtractor.extract_gaussians_sdf()
-
             name = 'fuse.ply'
-            depth_trunc = (gaussExtractor.radius * 2.0) if args.depth_trunc < 0  else args.depth_trunc
-            voxel_size = (depth_trunc / args.mesh_res) if args.voxel_size_TSDF < 0 else args.voxel_size_TSDF
-            sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc
-            mesh = gaussExtractor.extract_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
-            
+
+            if args.is_unbounded:
+                radius = None if args.depth_trunc < 0  else args.depth_trunc / 2
+                mesh = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res, radius=radius)
+            else:
+                depth_trunc = (gaussExtractor.radius * 2.0) if args.depth_trunc < 0  else args.depth_trunc
+                voxel_size = (depth_trunc / args.mesh_res) if args.voxel_size_TSDF < 0 else args.voxel_size_TSDF
+                sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc
+                mesh = gaussExtractor.extract_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
+
+                radius = None if args.depth_trunc < 0  else args.depth_trunc / 2
+                pcd = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res, radius=radius, only_visualize=True)
+                o3d.io.write_point_cloud(os.path.join(dataset.model_path, name.replace('.ply', '_gaussian_tsdf.ply')), pcd)
+
             o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name), mesh)
             print("mesh saved at {}".format(os.path.join(dataset.model_path, name)))
             # post-process the mesh and save, saving the largest N clusters
@@ -163,6 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
 
     parser.add_argument("--skip_mesh", action="store_true")
+    parser.add_argument("--is_unbounded", action="store_true")
     parser.add_argument("--voxel_size_TSDF", default=-1.0, type=float, help='Mesh: voxel size for TSDF')
     parser.add_argument("--depth_trunc", default=-1.0, type=float, help='Mesh: Max depth range for TSDF')
     parser.add_argument("--sdf_trunc", default=-1.0, type=float, help='Mesh: truncation value for TSDF')

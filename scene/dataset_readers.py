@@ -80,7 +80,7 @@ def fetchPly(path):
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False):
+def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False, is_train_on_all_images=False):
     poses_path = os.path.join(path, "poses")
     images_path = os.path.join(path, images)
     if use_video_depth_anything:
@@ -136,7 +136,10 @@ def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False):
                               image_path=image_path, image_name=image_name, depth_path=depth_path,
                               width=width, height=height, is_test=image_name in test_cam_names_list)
         cam_infos.append(cam_info)
-    train_cam_infos = [c for c in cam_infos if not c.is_test]
+    if is_train_on_all_images:
+        train_cam_infos = cam_infos
+    else:
+        train_cam_infos = [c for c in cam_infos if not c.is_test]
     test_cam_infos = [c for c in cam_infos if c.is_test]
 
     nerf_normalization = getNerfppNorm(train_cam_infos)

@@ -41,7 +41,7 @@ class Scene:
         self.train_cameras = {}
         self.test_cameras = {}
 
-        scene_info = load_scene(args.source_path, args.images, args.eval, use_video_depth_anything=args.use_video_depth_anything)
+        scene_info = load_scene(args.source_path, args.images, args.eval, use_video_depth_anything=args.use_video_depth_anything, is_train_on_all_images=args.is_train_on_all_images)
         self.gaussians.set_appearance(len(scene_info.train_cameras))
 
         if not self.loaded_iter:

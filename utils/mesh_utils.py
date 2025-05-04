@@ -20,7 +20,7 @@ import open3d as o3d
 import trimesh
 
 
-def save_tsdf_as_pointcloud(tsdf, samples, filename="tsdf.ply"):
+def save_tsdf_as_pointcloud(tsdf, samples):
     """
     将 TSDF 保存为点云文件
     
@@ -48,7 +48,8 @@ def save_tsdf_as_pointcloud(tsdf, samples, filename="tsdf.ply"):
     pcd.colors = o3d.utility.Vector3dVector(colors)
     
     # 保存点云
-    o3d.io.write_point_cloud(filename, pcd)
+    return pcd
+    # o3d.io.write_point_cloud(filename, pcd)
     
     # 也可以保存为其他格式
     # o3d.io.write_point_cloud("tsdf.xyz", pcd)  # XYZ 格式
@@ -270,7 +271,7 @@ class GaussianExtractor(object):
         return mesh
 
     @torch.no_grad()
-    def extract_mesh_unbounded(self, resolution=1024, radius=None):
+    def extract_mesh_unbounded(self, resolution=1024, radius=None, only_visualize=False):
         """
         Experimental features, extracting meshes from unbounded scenes, not fully test across datasets. 
         return o3d.mesh
@@ -370,14 +371,15 @@ class GaussianExtractor(object):
         sdf_function = lambda x: compute_unbounded_tsdf(x, inv_contraction, voxel_size)
         from utils.mcube_utils import marching_cubes_with_contraction
         
-        # gaussians_tsdf = compute_unbounded_tsdf(self.gaussians.get_xyz, None, voxel_size)
-        # save_tsdf_as_pointcloud(gaussians_tsdf.cpu().numpy(), self.gaussians.get_xyz.cpu().numpy(), filename=f"tsdf_test.ply")
-        
+        gaussians_tsdf = compute_unbounded_tsdf(self.gaussians.get_xyz, None, voxel_size)
+        pcd = save_tsdf_as_pointcloud(gaussians_tsdf.cpu().numpy(), self.gaussians.get_xyz.cpu().numpy())
+        if only_visualize:
+            return pcd
         # gaussians_sdf = compute_raw_sdf(self.gaussians.get_xyz, None)
         # save_raw_sdf_as_pointcloud(gaussians_sdf.cpu().numpy(), self.gaussians.get_xyz.cpu().numpy(), filename=f"sdf_test.ply")
         # breakpoint()
 
-        R = contract(normalize(self.gaussians.get_xyz())).norm(dim=-1).cpu().numpy()
+        R = contract(normalize(self.gaussians.get_xyz)).norm(dim=-1).cpu().numpy()
         R = np.quantile(R, q=0.95)
         R = min(R+0.01, 1.9)
 

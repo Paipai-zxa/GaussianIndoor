@@ -621,29 +621,35 @@ class  GaussianModel:
 
     def sdf_densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, radii, densification_threshold=0.95, pruning_threshold=0.002, \
                             viewpoint_stack=None, render=None, pipe=None, bg=None, is_recal_split=False, is_recal_prune=False,
-                            grad_sdf_omega=0.0002, is_apply_grad_sdf_omega=False):
+                            grad_sdf_omega=0.0002, is_apply_grad_sdf_omega=False, enable_sdf_guidance=False):
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
         self.tmp_radii = radii
 
+        # densification_threshold 阈值设置越大（比如0.95），意味着：
+        # 只有非常接近表面的点才会被选中进行加密（densify）
+        # 被选中的点会更少
+        # 加密操作会更保守
+
         gaussians_sdf, sdf_guidance = extract_sdf_guidance(viewpoint_stack, self, render, pipe, bg)
         sdf_densify_mask = (sdf_guidance > densification_threshold).squeeze()
         self.densify_and_clone(grads if not is_apply_grad_sdf_omega else grads + sdf_guidance.unsqueeze(-1) * grad_sdf_omega, 
-                               max_grad, extent, sdf_densify_mask=sdf_densify_mask)
+                               max_grad, extent, sdf_densify_mask=sdf_densify_mask if enable_sdf_guidance else None)
 
         if is_recal_split:
             gaussians_sdf, sdf_guidance = extract_sdf_guidance(viewpoint_stack, self, render, pipe, bg)
         sdf_densify_mask = (sdf_guidance > densification_threshold).squeeze()
-        self.densify_and_split(grads, max_grad, extent, sdf_densify_mask=sdf_densify_mask,
+        self.densify_and_split(grads, max_grad, extent, sdf_densify_mask=sdf_densify_mask if enable_sdf_guidance else None,
                                grad_sdf_omega=grad_sdf_omega, is_apply_grad_sdf_omega=is_apply_grad_sdf_omega, sdf_guidance=sdf_guidance)
 
         #-----------prune------------------
-        if is_recal_prune:
-            gaussians_sdf, sdf_guidance = extract_sdf_guidance(viewpoint_stack, self, render, pipe, bg)
-        sdf_prune_guidance = 1 - sdf_guidance
-        sdf_prune_mask = (sdf_prune_guidance > pruning_threshold).squeeze()
-        self.prune_points(sdf_prune_mask)
+        if enable_sdf_guidance:
+            if is_recal_prune:
+                gaussians_sdf, sdf_guidance = extract_sdf_guidance(viewpoint_stack, self, render, pipe, bg)
+            sdf_prune_guidance = 1 - sdf_guidance
+            sdf_prune_mask = (sdf_prune_guidance > pruning_threshold).squeeze()
+            self.prune_points(sdf_prune_mask)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:

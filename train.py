@@ -279,7 +279,7 @@ def training(args, dataset, opt, pipe):
                             size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                             gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
 
-                        if opt.sdf_guidance_start_iter < iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0:
+                        if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0:
                             size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                             gaussians.sdf_densify_and_prune(max_grad=opt.densify_grad_threshold, min_opacity=0.005, extent=scene.cameras_extent, max_screen_size=size_threshold, radii=radii, \
                                                             viewpoint_stack=scene.getTrainCameras(), render=render_func, pipe=pipe, bg=bg, \
@@ -288,7 +288,8 @@ def training(args, dataset, opt, pipe):
                                                             is_recal_split=opt.is_recal_split, \
                                                             is_recal_prune=opt.is_recal_prune, \
                                                             grad_sdf_omega=opt.grad_sdf_omega, \
-                                                            is_apply_grad_sdf_omega=opt.is_apply_grad_sdf_omega)
+                                                            is_apply_grad_sdf_omega=opt.is_apply_grad_sdf_omega, \
+                                                            enable_sdf_guidance=opt.enable_sdf_guidance)
                         
                         if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                             gaussians.reset_opacity()
@@ -358,6 +359,7 @@ if __name__ == "__main__":
     #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     args = parser.parse_args(sys.argv[1:])
+    args.test_iterations.append(args.iterations)
     args.save_iterations.append(args.iterations)
     
     print("Optimizing " + args.model_path)

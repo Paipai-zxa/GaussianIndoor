@@ -1,4 +1,4 @@
-iterations=30000
+iterations=50000
 # checkpoint_iterations=(5000 10000 15000)
 export CUDA_VISIBLE_DEVICES=$1
 
@@ -13,7 +13,7 @@ fi
 
 
 current_time=$(date "+%Y%m%d_%H%M%S")
-exp_name=train_sdfguide_full
+exp_name=train_sdfguide_gradsdf0.00001_inter500_pth_0.002_dth_0.98_sdfguide_20000_25000_iter_50000
 # exp_name=train_planecons_7000_0.015_detachall
 # exp_name=train_planecons_7000_0.01
 # exp_name=train_detachshs_featbank_20250429_194238
@@ -42,12 +42,12 @@ python train.py -s data/${scene} -m ${output_path} \
     --enable_sdf_guidance \
     --is_recal_split \
     --is_recal_prune \
-    --densification_threshold 0.95 \
+    --densification_threshold 0.98 \
     --pruning_threshold 0.002 \
-    --sdf_guidance_start_iter 15000 \
+    --sdf_guidance_start_iter 20000 \
     --sdf_guidance_end_iter 25000 \
-    --sdf_guidance_interval 100 \
-    --grad_sdf_omega 0.0002 \
+    --sdf_guidance_interval 500 \
+    --grad_sdf_omega 0.00001 \
     --is_apply_grad_sdf_omega \
     --iterations ${iterations} --eval 
 
