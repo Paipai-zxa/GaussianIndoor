@@ -125,12 +125,12 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
 
         if not args.skip_mesh:
             render_func = scaffold_render if dataset.enable_scaffold else vanilla_render
-            gaussExtractor = GaussianExtractor(gaussians, render_func, pipeline, bg_color=bg_color)    
+            gaussExtractor = GaussianExtractor(gaussians, render_func, pipeline, bg_color=bg_color, extract_semantic=args.extract_semantic)    
             print("export mesh ...")
             # set the active_sh to 0 to export only diffuse texture
             # gaussExtractor.gaussians.active_sh_degree = 0
             
-            gaussExtractor.reconstruction(scene.getTrainCameras())
+            gaussExtractor.reconstruction(scene.getTrainCameras(), scene.id2label)
             # gaussExtractor.reconstruction(scene.getTestCameras())
             # extract the mesh and save
 
@@ -145,9 +145,14 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
                 sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc
                 mesh = gaussExtractor.extract_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
 
-                radius = None if args.depth_trunc < 0  else args.depth_trunc / 2
-                pcd = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res, radius=radius, only_visualize=True)
-                o3d.io.write_point_cloud(os.path.join(dataset.model_path, name.replace('.ply', '_gaussian_tsdf.ply')), pcd)
+                if args.extract_semantic:
+                    mesh_semantic, mesh_instance = gaussExtractor.extract_semantic_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
+                    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_semantic.ply')), mesh_semantic)
+                    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_instance.ply')), mesh_instance)
+
+                # radius = None if args.depth_trunc < 0  else args.depth_trunc / 2
+                # pcd = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res, radius=radius, only_visualize=True)
+                # o3d.io.write_point_cloud(os.path.join(dataset.model_path, name.replace('.ply', '_gaussian_tsdf.ply')), pcd)
 
             o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name), mesh)
             print("mesh saved at {}".format(os.path.join(dataset.model_path, name)))
@@ -155,6 +160,7 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
             mesh_post = post_process_mesh(mesh, cluster_to_keep=args.num_cluster)
             o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_post.ply')), mesh_post)
             print("mesh post processed saved at {}".format(os.path.join(dataset.model_path, name.replace('.ply', '_post.ply'))))
+        
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -164,7 +170,7 @@ if __name__ == "__main__":
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
-
+    parser.add_argument("--extract_semantic", action="store_true")
     parser.add_argument("--skip_mesh", action="store_true")
     parser.add_argument("--is_unbounded", action="store_true")
     parser.add_argument("--voxel_size_TSDF", default=-1.0, type=float, help='Mesh: voxel size for TSDF')

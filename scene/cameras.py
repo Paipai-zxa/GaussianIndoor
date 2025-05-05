@@ -17,7 +17,8 @@ from utils.general_utils import PILtoTorch
 import cv2
 
 class Camera(nn.Module):
-    def __init__(self, resolution, colmap_id, R, T, FoVx, FoVy, image, invdepthmap,
+    def __init__(self, resolution, colmap_id, R, T, FoVx, FoVy, image, invdepthmap, 
+                 instance_train, semantic_train, instance_gt, semantic_gt,
                  image_name, uid,
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda"
                  ):
@@ -67,6 +68,19 @@ class Camera(nn.Module):
                 self.invdepthmap = self.invdepthmap[..., 0]
             self.invdepthmap = torch.from_numpy(self.invdepthmap[None]).to(self.data_device)
             self.depth_mask = torch.from_numpy(self.depth_mask[None]).to(self.data_device)
+        
+        self.instance_train = None
+        self.semantic_train = None
+        self.instance_gt = None
+        self.semantic_gt = None
+        if instance_train is not None:
+            self.instance_train = torch.from_numpy(instance_train[None]).to(self.data_device)
+        if semantic_train is not None:
+            self.semantic_train = torch.from_numpy(semantic_train[None]).to(self.data_device)
+        if instance_gt is not None:
+            self.instance_gt = torch.from_numpy(instance_gt[None]).to(self.data_device)
+        if semantic_gt is not None:
+            self.semantic_gt = torch.from_numpy(semantic_gt[None]).to(self.data_device)
 
         self.zfar = 100.0
         self.znear = 0.01

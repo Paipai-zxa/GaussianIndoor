@@ -18,7 +18,22 @@ from utils.render_utils import save_img_f32, save_img_u8
 from functools import partial
 import open3d as o3d
 import trimesh
+import colorsys
 
+def id2rgb(id):
+    # Convert ID into a hue value
+    golden_ratio = 1.6180339887
+    h = ((id * golden_ratio) % 1)
+    s = 0.5 + (id % 2) * 0.5
+    l = 0.5
+
+    # Use colorsys to convert HSL to RGB
+    rgb = np.zeros((3,), dtype=np.uint8)
+    if id==0:
+        return rgb
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    rgb[0], rgb[1], rgb[2] = int(r*255), int(g*255), int(b*255)
+    return rgb
 
 def save_tsdf_as_pointcloud(tsdf, samples):
     """
@@ -165,7 +180,7 @@ def to_cam_open3d(viewpoint_stack):
 
 
 class GaussianExtractor(object):
-    def __init__(self, gaussians, render, pipe, bg_color=None):
+    def __init__(self, gaussians, render, pipe, bg_color=None, extract_semantic=False):
         """
         a class that extracts attributes a scene presented by 2DGS
 
@@ -180,15 +195,19 @@ class GaussianExtractor(object):
         self.gaussians = gaussians
         self.render = partial(render, pipe=pipe, bg_color=background)
         self.clean()
+        self.extract_semantic = extract_semantic
+
 
     @torch.no_grad()
     def clean(self):
         self.depthmaps = []
         self.rgbmaps = []
         self.viewpoint_stack = []
+        self.instance_maps = []
+        self.semantic_maps = []
 
     @torch.no_grad()
-    def reconstruction(self, viewpoint_stack):
+    def reconstruction(self, viewpoint_stack, id2label=[]):
         """
         reconstruct radiance field given cameras
         """
@@ -202,6 +221,20 @@ class GaussianExtractor(object):
             viewpoint_cam.camera_center = viewpoint_cam.camera_center.to(device="cuda")
 
             render_pkg = self.render(viewpoint_cam, self.gaussians)
+
+            if self.extract_semantic:
+                # instance_map = viewpoint_cam.instance_train.cpu().numpy()
+                instance_map = viewpoint_cam.instance_gt.cpu().numpy()
+                instance_color = np.array([id2rgb(ID) for ID in instance_map.reshape(-1).tolist()])
+                instance_color = instance_color.reshape(instance_map.shape[1], instance_map.shape[2], 3)
+
+                # semantic_map = viewpoint_cam.semantic_train.cpu().numpy()
+                semantic_map = viewpoint_cam.semantic_gt.cpu().numpy()
+                semantic_color = np.array([id2label[semID].color for semID in semantic_map.reshape(-1).tolist()])
+                semantic_color = semantic_color.reshape(semantic_map.shape[1], semantic_map.shape[2], 3)
+
+                self.instance_maps.append(instance_color)
+                self.semantic_maps.append(semantic_color)
             
             rgb = render_pkg['render']
             depth = render_pkg['depth']
@@ -269,6 +302,58 @@ class GaussianExtractor(object):
 
         mesh = volume.extract_triangle_mesh()
         return mesh
+
+    @torch.no_grad()
+    def extract_semantic_mesh_bounded(self, voxel_size=0.004, sdf_trunc=0.02, depth_trunc=3, mask_backgrond=True):
+        """
+        Perform TSDF fusion given a fixed depth range, used in the paper.
+        
+        voxel_size: the voxel size of the volume
+        sdf_trunc: truncation value
+        depth_trunc: maximum depth range, should depended on the scene's scales
+        mask_backgrond: whether to mask backgroud, only works when the dataset have masks
+
+        return o3d.mesh
+        """
+
+        volume_semantic = o3d.pipelines.integration.ScalableTSDFVolume(
+            voxel_length= voxel_size,
+            sdf_trunc=sdf_trunc,
+            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8
+        )
+
+        volume_instance = o3d.pipelines.integration.ScalableTSDFVolume(
+            voxel_length= voxel_size,
+            sdf_trunc=sdf_trunc,
+            color_type=o3d.pipelines.integration.TSDFVolumeColorType.RGB8
+        )
+
+        for i, cam_o3d in tqdm(enumerate(to_cam_open3d(self.viewpoint_stack)), desc="TSDF integration progress"):
+            depth = self.depthmaps[i]
+            semantic_color = self.semantic_maps[i]
+            instance_color = self.instance_maps[i]
+
+            # make open3d rgbd
+            rgbd_semantic = o3d.geometry.RGBDImage.create_from_color_and_depth(
+                o3d.geometry.Image(np.asarray(semantic_color, order="C", dtype=np.uint8)),
+                o3d.geometry.Image(np.asarray(depth.permute(1,2,0).cpu().numpy(), order="C")),
+                depth_trunc = depth_trunc, convert_rgb_to_intensity=False,
+                depth_scale = 1.0
+            )
+
+            rgbd_instance = o3d.geometry.RGBDImage.create_from_color_and_depth(
+                o3d.geometry.Image(np.asarray(instance_color, order="C", dtype=np.uint8)),
+                o3d.geometry.Image(np.asarray(depth.permute(1,2,0).cpu().numpy(), order="C")),
+                depth_trunc = depth_trunc, convert_rgb_to_intensity=False,
+                depth_scale = 1.0
+            )
+
+            volume_semantic.integrate(rgbd_semantic, intrinsic=cam_o3d.intrinsic, extrinsic=cam_o3d.extrinsic)
+            volume_instance.integrate(rgbd_instance, intrinsic=cam_o3d.intrinsic, extrinsic=cam_o3d.extrinsic)
+
+        mesh_semantic = volume_semantic.extract_triangle_mesh()
+        mesh_instance = volume_instance.extract_triangle_mesh()
+        return mesh_semantic, mesh_instance
 
     @torch.no_grad()
     def extract_mesh_unbounded(self, resolution=1024, radius=None, only_visualize=False):

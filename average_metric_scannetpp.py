@@ -1,11 +1,11 @@
 import os
 import json
-exp_name = "train_depth_1000000_100000_wo_detachall_2025"
+exp_name = "train_onlygradsdf_Omega_0.0002_StartIter_"
 path = "output/scannetpp"
 scene_list = os.listdir(path)
 scene_list = [scene for scene in scene_list if not scene.endswith(".json")]
 scene_list = ['8b5caf3398', '8d563fc2cc']
-# scene_list = ['1ada7a0617', 'f6659a3107', '5748ce6f01']
+
 metrics = []
 metrics_mesh = []
 for scene in scene_list:

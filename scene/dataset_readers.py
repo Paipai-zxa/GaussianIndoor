@@ -14,6 +14,7 @@ import sys
 from PIL import Image
 import json
 from typing import NamedTuple
+from pre_process.label import get_labels
 # from scene.colmap_loader import read_extrinsics_text, read_intrinsics_text, qvec2rotmat, \
 #     read_extrinsics_binary, read_intrinsics_binary, read_points3D_binary, read_points3D_text
 from utils.graphics_utils import getWorld2View2, focal2fov, fov2focal
@@ -38,6 +39,10 @@ class CameraInfo(NamedTuple):
     width: int
     height: int
     is_test: bool
+    instance_train_path: str
+    semantic_train_path: str
+    instance_gt_path: str
+    semantic_gt_path: str
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -46,6 +51,7 @@ class SceneInfo(NamedTuple):
     nerf_normalization: dict
     ply_path: str
     is_nerf_synthetic: bool
+    id2label: dict
 
 def getNerfppNorm(cam_info):
     def get_center_and_diag(cam_centers):
@@ -92,6 +98,11 @@ def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False, 
     point_cloud_path = os.path.join(path, "points3D.ply")
     intrinsics_path = os.path.join(path, "color_intrinsics.txt")
 
+    instances_train_path = os.path.join(path, "instance_image")
+    semantics_train_path = os.path.join(path, "semantic_image")
+    instances_gt_path = os.path.join(path, "instance")
+    semantics_gt_path = os.path.join(path, "semantic")
+
     intrinsics = np.loadtxt(intrinsics_path).reshape(4, 4)
     image_names = os.listdir(images_path)
     image_names = sorted(image_names, key=lambda x: int(x.replace("DSC", "").split('.')[0]))
@@ -131,9 +142,24 @@ def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False, 
             depth_path = os.path.join(depths_path, f"{image_name.split('.')[0]}.png")
             if not os.path.exists(depth_path):
                 depth_path = ''
+        
+        instance_train_path = os.path.join(instances_train_path, f"{image_name.split('.')[0]}.png")
+        if not os.path.exists(instance_train_path):
+            instance_train_path = ''
+        semantic_train_path = os.path.join(semantics_train_path, f"{image_name.split('.')[0]}.png")
+        if not os.path.exists(semantic_train_path):
+            semantic_train_path = ''
+        instance_gt_path = os.path.join(instances_gt_path, f"{image_name.split('.')[0]}.png")
+        if not os.path.exists(instance_gt_path):
+            instance_gt_path = ''
+        semantic_gt_path = os.path.join(semantics_gt_path, f"{image_name.split('.')[0]}.png")
+        if not os.path.exists(semantic_gt_path):
+            semantic_gt_path = ''
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, 
                               image_path=image_path, image_name=image_name, depth_path=depth_path,
+                              instance_train_path=instance_train_path, semantic_train_path=semantic_train_path,
+                              instance_gt_path=instance_gt_path, semantic_gt_path=semantic_gt_path,
                               width=width, height=height, is_test=image_name in test_cam_names_list)
         cam_infos.append(cam_info)
     if is_train_on_all_images:
@@ -152,10 +178,13 @@ def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False, 
     except:
         pcd = None
 
+    id2label = get_labels(os.path.basename(path))
+
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
                            ply_path=point_cloud_path,
-                           is_nerf_synthetic=False)
+                           is_nerf_synthetic=False,
+                           id2label=id2label)
     return scene_info

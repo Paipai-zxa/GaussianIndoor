@@ -12,12 +12,12 @@ if [ $2 -le 7 ]; then
     depth_l1_weight_final=1000
 elif [ $2 -le 12 ]; then
     dataset_name=scannetpp
-    depth_l1_weight_init=1000000
-    depth_l1_weight_final=100000
+    depth_l1_weight_init=100000
+    depth_l1_weight_final=1000
 else
     dataset_name=scannetv2_pan
-    depth_l1_weight_init=1000000
-    depth_l1_weight_final=100000
+    depth_l1_weight_init=100000
+    depth_l1_weight_final=1000
 fi
 
 # 添加额外的训练参数
@@ -27,7 +27,7 @@ if [ $2 -gt 9 ]; then
 fi
 
 current_time=$(date "+%Y%m%d_%H%M%S")
-base_exp_name=train_onlygradsdf_Omega_0.0002_StartIter_15000_EndIter_25000_Interval_100_wodetachshs_wogeomlp
+base_exp_name=train_onlygradsdf_Omega_0.0002_StartIter_15000_EndIter_25000_Interval_100
 
     # --detach_geo_mlp_input_feat \
     # --detach_geo_rasterizer_input_shs \
@@ -53,6 +53,11 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --sdf_guidance_interval 100 \
     --grad_sdf_omega 0.0002 \
     --is_apply_grad_sdf_omega \
+    --detach_geo_mlp_input_feat \
+    --detach_geo_rasterizer_input_shs \
+    --enable_geo_mlp \
+    --opt_geo_mlp_iteration 7000 \
+    --feat_dim 32 \
     --iterations ${iterations} --eval ${extra_args}" 
 
 # 执行训练命令

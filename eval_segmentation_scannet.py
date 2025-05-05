@@ -88,7 +88,7 @@ def main():
     debug_flag = args.debug
     stride = args.stride
     vis_path = os.path.join(result_folder, "semantic_visualizations")
-    label_map_path = os.path.join("label_map", f"{scene_idx}_map.csv")
+    label_map_path = os.path.join(gt_folder, f"{scene_idx}_map.csv")
     label_map = pd.read_csv(label_map_path)
     color_label_map = get_labels(scene_idx)
 

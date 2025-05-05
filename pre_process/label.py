@@ -153,6 +153,8 @@ def get_labels(scene):
             Label(  'tv'                   ,  9 ,     5,    ( 78, 71,183) ),
             Label(  'other'                , 10 ,     5,    (100, 85,144) ),
         ]
+    else:
+        return []
 
     id2label= { label.id      : label for label in labels           }
     return id2label

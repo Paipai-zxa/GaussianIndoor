@@ -17,7 +17,7 @@ import cv2
 
 WARNED = False
 
-def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic):
+def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, label_map=None):
     image = Image.open(cam_info.image_path)
 
     if cam_info.depth_path != "":
@@ -41,7 +41,25 @@ def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic):
             raise
     else:
         invdepthmap = None
-        
+    
+    if cam_info.instance_train_path != "":
+        instance_train = np.array(Image.open(cam_info.instance_train_path))
+    else:
+        instance_train = None
+    if cam_info.semantic_train_path != "":
+        semantic_train = np.array(Image.open(cam_info.semantic_train_path))
+    else:
+        semantic_train = None
+    
+    if cam_info.instance_gt_path != "":
+        instance_gt = np.array(Image.open(cam_info.instance_gt_path))
+    else:
+        instance_gt = None
+    if cam_info.semantic_gt_path != "":
+        semantic_gt = np.array(Image.open(cam_info.semantic_gt_path))
+        semantic_gt = label_map[semantic_gt]
+    else:
+        semantic_gt = None
     orig_w, orig_h = image.size
     if args.resolution in [1, 2, 4, 8]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
@@ -65,14 +83,16 @@ def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic):
 
     return Camera(resolution, colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY,
-                  image=image, invdepthmap=invdepthmap,
-                  image_name=cam_info.image_name, uid=id, data_device=args.data_device)
+                  image=image, invdepthmap=invdepthmap, 
+                  image_name=cam_info.image_name, uid=id, data_device=args.data_device,
+                  instance_train=instance_train, semantic_train=semantic_train,
+                  instance_gt=instance_gt, semantic_gt=semantic_gt)
 
-def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_nerf_synthetic):
+def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_nerf_synthetic, label_map=None):
     camera_list = []
 
     for id, c in enumerate(cam_infos):
-        camera_list.append(loadCam(args, id, c, resolution_scale, is_nerf_synthetic))
+        camera_list.append(loadCam(args, id, c, resolution_scale, is_nerf_synthetic, label_map))
 
     return camera_list
 

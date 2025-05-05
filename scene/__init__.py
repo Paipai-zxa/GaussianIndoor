@@ -12,6 +12,8 @@
 import os
 import random
 import json
+import pandas as pd
+import numpy as np
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import load_scene
 from scene.gaussian_model_scaffold import GaussianModel as ScaffoldGaussianModel
@@ -43,6 +45,17 @@ class Scene:
 
         scene_info = load_scene(args.source_path, args.images, args.eval, use_video_depth_anything=args.use_video_depth_anything, is_train_on_all_images=args.is_train_on_all_images)
         self.gaussians.set_appearance(len(scene_info.train_cameras))
+        self.id2label = scene_info.id2label
+        label_map_path = os.path.join(args.source_path, f"{os.path.basename(args.source_path)}_map.csv")
+        if os.path.exists(label_map_path):
+            label_map = pd.read_csv(label_map_path)
+            self.label_map = np.zeros((label_map['idx'].max() + 1), dtype=int)
+            self.label_thing_mapping = None
+            if 'thing' in label_map:
+                for index, new_label in enumerate(label_map['label']):
+                    self.label_map[index] = new_label
+        else:
+            self.label_map = None
 
         if not self.loaded_iter:
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
@@ -66,9 +79,9 @@ class Scene:
 
         for resolution_scale in resolution_scales:
             print("Loading Training Cameras")
-            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, scene_info.is_nerf_synthetic)
+            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, scene_info.is_nerf_synthetic, label_map=self.label_map)
             print("Loading Test Cameras")
-            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, scene_info.is_nerf_synthetic)
+            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, scene_info.is_nerf_synthetic, label_map=self.label_map)
 
         if self.loaded_iter:
             self.gaussians.load_ply(os.path.join(self.model_path,
