@@ -53,6 +53,7 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --sdf_guidance_interval 100 \
     --grad_sdf_omega 0.0002 \
     --is_apply_grad_sdf_omega \
+    --enable_sdf_guidance \
     --detach_geo_mlp_input_feat \
     --detach_geo_rasterizer_input_shs \
     --enable_geo_mlp \

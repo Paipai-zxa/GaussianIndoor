@@ -47,6 +47,7 @@ for grad_sdf_omega in "${grad_sdf_omega_values[@]}"; do
                     --sdf_guidance_interval ${sdf_guidance_interval} \
                     --grad_sdf_omega ${grad_sdf_omega} \
                     --is_apply_grad_sdf_omega \
+                    --enable_sdf_guidance \
                     --iterations ${iterations} --eval" 
 
                 # 执行训练命令
