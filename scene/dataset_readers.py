@@ -46,6 +46,8 @@ class CameraInfo(NamedTuple):
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
+    semantic_point_cloud: BasicPointCloud
+    instance_point_cloud: BasicPointCloud
     train_cameras: list
     test_cameras: list
     nerf_normalization: dict
@@ -85,6 +87,22 @@ def fetchPly(path):
     normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
+def fetchInstancePly(path):
+    plydata = PlyData.read(path)
+    vertices = plydata['vertex']
+    positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
+    colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T
+    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    return BasicPointCloud(points=positions, colors=colors, normals=normals)
+
+def fetchSemanticPly(path):
+    plydata = PlyData.read(path)
+    vertices = plydata['vertex']
+    positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
+    colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T
+    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    return BasicPointCloud(points=positions, colors=colors, normals=normals)
+
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False, is_train_on_all_images=False):
     poses_path = os.path.join(path, "poses")
@@ -100,7 +118,9 @@ def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False, 
 
     instances_train_path = os.path.join(path, "instance_image")
     semantics_train_path = os.path.join(path, "semantic_image")
-    instances_gt_path = os.path.join(path, "instance")
+    instances_gt_path = os.path.join(path, "instance_remap")
+    if not os.path.exists(instances_gt_path):
+        instances_gt_path = os.path.join(path, "instance")
     semantics_gt_path = os.path.join(path, "semantic")
 
     intrinsics = np.loadtxt(intrinsics_path).reshape(4, 4)
@@ -177,14 +197,24 @@ def load_scene(path, images, eval, llffhold=10, use_video_depth_anything=False, 
         pcd = fetchPly(point_cloud_path)
     except:
         pcd = None
-
+    try:
+        semantic_pcd = fetchSemanticPly(point_cloud_path.replace(".ply", "_semantic.ply"))
+    except:
+        semantic_pcd = None
+    try:
+        instance_pcd = fetchInstancePly(point_cloud_path.replace(".ply", "_instance.ply"))
+    except:
+        instance_pcd = None
     id2label = get_labels(os.path.basename(path))
 
     scene_info = SceneInfo(point_cloud=pcd,
+                           semantic_point_cloud=semantic_pcd,
+                           instance_point_cloud=instance_pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
                            ply_path=point_cloud_path,
                            is_nerf_synthetic=False,
                            id2label=id2label)
+
     return scene_info

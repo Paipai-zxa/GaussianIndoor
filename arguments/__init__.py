@@ -66,6 +66,8 @@ class ModelParams(ParamGroup):
         self.rotations_geo_after_activation = False
         self.use_video_depth_anything = False
         self.is_train_on_all_images = False
+
+
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         self.feat_dim = 32
         self.n_offsets = 10
@@ -96,6 +98,19 @@ class ModelParams(ParamGroup):
         self.data_device = "cuda"
         self.eval = False
 
+        #### semantic
+        self.enable_semantic = False
+        self.opt_semantic_mlp_iteration = 0
+        self.semantic_feature_dim = 16
+        self.instance_feature_dim = 16
+        self.semantic_mlp_dim = 64
+        self.instance_query_num = 35
+        self.instance_query_feat_dim = 16
+        self.load_semantic_from_pcd = False
+        self.use_geo_mlp_scales = False
+        self.use_geo_mlp_rotations = False
+        self.instance_query_gaussian_sigma = 0.01
+        self.instance_query_distance_mode = 0
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -116,7 +131,6 @@ class OptimizationParams(ParamGroup):
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
         self.position_lr_delay_mult = 0.01
-        self.position_lr_max_steps = 30_000
         self.feature_lr = 0.0025
         self.opacity_lr = 0.025
         self.scaling_lr = 0.005
@@ -137,9 +151,23 @@ class OptimizationParams(ParamGroup):
         self.random_background = False
         self.optimizer_type = "default"
 
+        # semantic
+        self.semantic_features_lr = 0.0025
+        self.instance_query_pos_lr = 0.00016
+        self.instance_query_rotation_lr = 0.001
+        self.instance_query_scaling_lr = 0.005
+        self.instance_query_features_lr = 0.0025
+        self.instance_features_lr = 0.0025
+
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         self.plane_constraint_weight = 0.015
         self.cross_view_constraint_weight = 0.015
+        self.semantic_ce_weight = 0.5
+        self.semantic_warping_weight = 1.5
+        self.instance_bce_weight = 0.5
+        self.instance_dice_weight = 0.5
+        self.use_instance_train = False
+        self.use_semantic_train = False
         self.scale_flatten_weight = 100.0
         self.num_neighbors_views = 1
         self.use_plane_constraint = False
@@ -186,7 +214,7 @@ class OptimizationParams(ParamGroup):
         self.mlp_featurebank_lr_max_steps = 30_000
 
         self.geo_mlp_lr_init = 0.004
-        self.geo_mlp_lr_final = 0.004
+        self.geo_mlp_lr_final = 0.0004
         self.geo_mlp_lr_delay_mult = 0.01
         self.geo_mlp_lr_max_steps = 30_000
 
@@ -194,6 +222,12 @@ class OptimizationParams(ParamGroup):
         self.appearance_lr_final = 0.0005
         self.appearance_lr_delay_mult = 0.01
         self.appearance_lr_max_steps = 30_000   
+
+        # semantic
+        self.semantic_mlp_lr_init = 0.004
+        self.semantic_mlp_lr_final = 0.0004
+        self.semantic_mlp_lr_delay_mult = 0.01
+        self.semantic_mlp_lr_max_steps = 30_000
 
         self.start_stat = 500
         self.update_from = 1500

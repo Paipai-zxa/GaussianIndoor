@@ -3,7 +3,7 @@ import json
 from plyfile import PlyData
 
 # 定义目录和输出文件
-base_dir = 'output/scannetv2/0085_00/run_thrablation'
+base_dir = 'output/scannetv2_pan/0628_02'
 output_file = 'summary_metrics.txt'
 if os.path.exists(output_file):
     os.remove(output_file)

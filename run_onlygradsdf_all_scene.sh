@@ -23,7 +23,7 @@ fi
 # 添加额外的训练参数
 extra_args=""
 if [ $2 -gt 9 ]; then
-    extra_args="--is_train_on_all_images"
+    extra_args="--is_train_on_all_images --enable_semantic"
 fi
 
 current_time=$(date "+%Y%m%d_%H%M%S")
@@ -70,7 +70,8 @@ python render.py \
     --eval \
     --skip_train \
     --mesh_res 512 \
-    --depth_trunc 5.0 
+    --depth_trunc 5.0 \
+    ${extra_args}
 
 python ./eval_mesh/exp_evaluation.py \
     --mode eval_3D_mesh_metrics \

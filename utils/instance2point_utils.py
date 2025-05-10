@@ -6,6 +6,21 @@ import sys
 from argparse import ArgumentParser
 import time
 import cv2
+import colorsys
+def id2rgb(id):
+    # Convert ID into a hue value
+    golden_ratio = 1.6180339887
+    h = ((id * golden_ratio) % 1)
+    s = 0.5 + (id % 2) * 0.5
+    l = 0.5
+
+    # Use colorsys to convert HSL to RGB
+    rgb = np.zeros((3,), dtype=np.uint8)
+    if id==0:
+        return rgb
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    rgb[0], rgb[1], rgb[2] = int(r*255), int(g*255), int(b*255)
+    return rgb
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -75,16 +90,12 @@ def create_point_cloud(color_path, depth_path, intrinsic, extrinsic, downsample_
     intrinsic_scaled[1, 2] = intrinsic[1, 2] / downsample_factor  # cy
 
     if convert_to_color:
-        # 将语义ID转换为对应的颜色
-        id2label = get_labels(scene)
-        # 使用向量化操作替代循环
-        v_colors = np.vstack([id2label[semID].color if semID in id2label else (100, 100, 100) 
-                            for semID in color.reshape(-1).tolist()])
-        semantic_color = v_colors.reshape(color.shape[0], color.shape[1], 3).astype(np.uint8)
+        v_colors = np.vstack([id2rgb(semID) for semID in color.reshape(-1).tolist()])
+        instance_color = v_colors.reshape(color.shape[0], color.shape[1], 3).astype(np.uint8)
     else:
-        semantic_color = np.stack([color, color, color], axis=-1)
+        instance_color = np.stack([color, color, color], axis=-1)
 
-    color_o3d = o3d.geometry.Image(semantic_color)
+    color_o3d = o3d.geometry.Image(instance_color)
     depth_o3d = o3d.geometry.Image(depth)
     rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
         color_o3d,
@@ -123,14 +134,14 @@ def create_point_cloud(color_path, depth_path, intrinsic, extrinsic, downsample_
 
     return pcd
 
-def process_scene_point_clouds(scene_dir, semantic_dir, output_dir, is_depth_anything=False, convert_to_color=False):
+def process_scene_point_clouds(scene_dir, instance_dir, output_dir, is_depth_anything=False, convert_to_color=False):
     # 读取内参
     intrinsic = np.loadtxt(os.path.join(scene_dir, "color_intrinsics.txt"))
 
     combined_pcd = o3d.geometry.PointCloud()
 
     start_time = time.time()
-    colors_path = os.path.join(scene_dir, semantic_dir)
+    colors_path = os.path.join(scene_dir, instance_dir)
     colors_list = os.listdir(colors_path)
     colors_list = sorted(colors_list, key=lambda x: int(x.replace("DSC", "").split(".")[0]))
     for color in colors_list:
@@ -165,7 +176,7 @@ def process_scene_point_clouds(scene_dir, semantic_dir, output_dir, is_depth_any
         fast_normal_computation=False
     )
     
-    out_pcd_path = os.path.join(output_dir, f"points3D_semantic.ply")
+    out_pcd_path = os.path.join(output_dir, f"points3D_instance.ply")
     if is_depth_anything:
         out_pcd_path = os.path.join(output_dir, f"points3D_depth_anything.ply")
 
@@ -185,8 +196,8 @@ def process_scene_point_clouds(scene_dir, semantic_dir, output_dir, is_depth_any
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--scene_dir", type=str)
-    parser.add_argument("--semantic_dir", type=str)
+    parser.add_argument("--instance_dir", type=str)
     parser.add_argument("--is_depth_anything", action="store_true")
     parser.add_argument("--convert_to_color", action="store_true")
     args = parser.parse_args()
-    process_scene_point_clouds(args.scene_dir, args.semantic_dir, args.scene_dir, args.is_depth_anything, args.convert_to_color)
+    process_scene_point_clouds(args.scene_dir, args.instance_dir, args.scene_dir, args.is_depth_anything, args.convert_to_color)

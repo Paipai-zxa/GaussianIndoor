@@ -132,6 +132,8 @@ class GaussianModel:
             nn.Sigmoid()
         ).cuda()
 
+    def construct_mlp(self):
+        pass
 
     def eval(self):
         self.mlp_opacity.eval()

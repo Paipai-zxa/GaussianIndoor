@@ -50,12 +50,16 @@ class Scene:
         if os.path.exists(label_map_path):
             label_map = pd.read_csv(label_map_path)
             self.label_map = np.zeros((label_map['idx'].max() + 1), dtype=int)
+            self.label_num = label_map['label'].max() + 1
             self.label_thing_mapping = None
             if 'thing' in label_map:
                 for index, new_label in enumerate(label_map['label']):
                     self.label_map[index] = new_label
         else:
             self.label_map = None
+            self.label_num = 0
+
+        self.gaussians.construct_mlp(self.label_num)
 
         if not self.loaded_iter:
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
@@ -89,7 +93,8 @@ class Scene:
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
         else:
-            self.gaussians.create_from_pcd(scene_info.point_cloud, scene_info.train_cameras, self.cameras_extent)
+            self.gaussians.create_from_pcd(scene_info.point_cloud, scene_info.train_cameras, self.cameras_extent,
+                                           semantic_pcd=scene_info.semantic_point_cloud, instance_pcd=scene_info.instance_point_cloud)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

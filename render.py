@@ -73,6 +73,29 @@ def render_set(dataset, name, iteration, views, gaussians, pipeline, background)
         cv2.imwrite(os.path.join(render_depths_path, img_name + ".png"), depth_viz)
         cv2.imwrite(os.path.join(render_normals_path, img_name + ".png"), normal_viz)
 
+def render_semantic_set(dataset, views, gaussians, pipeline, background):
+    model_path = dataset.model_path
+    render_semantic_path = os.path.join(model_path, "semantic_image")
+    render_instance_path = os.path.join(model_path, "instance_image")
+
+    makedirs(render_semantic_path, exist_ok=True)
+    makedirs(render_instance_path, exist_ok=True)
+
+    for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
+        bg = background
+        render_func = scaffold_render if dataset.enable_scaffold else vanilla_render
+        renderpkg = render_func(view, gaussians, pipeline, bg)
+
+        img_name = view.image_name.split(".")[0]
+        semantic_map = renderpkg["semantic_map"]
+        semantic_map = torch.argmax(torch.softmax(semantic_map, dim=0), dim=0)
+        instance_map = renderpkg["instance_map"]
+        instance_map = torch.argmax(torch.softmax(instance_map, dim=0), dim=0)
+        semantic_map = semantic_map.cpu().numpy().astype(np.uint8)
+        instance_map = instance_map.cpu().numpy().astype(np.uint8)
+        cv2.imwrite(os.path.join(render_semantic_path, img_name + ".png"), semantic_map)
+        cv2.imwrite(os.path.join(render_instance_path, img_name + ".png"), instance_map)
+
 def render_sets(args, dataset : ModelParams, iteration : int, pipeline : PipelineParams):
 
     with torch.no_grad():
@@ -108,7 +131,19 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
                                             detach_geo_rasterizer_input_input_all_map = dataset.detach_geo_rasterizer_input_input_all_map,
                                             scales_geo_after_activation = dataset.scales_geo_after_activation,
                                             rotations_geo_after_activation = dataset.rotations_geo_after_activation,
-                                            opt_geo_mlp_iteration = dataset.opt_geo_mlp_iteration)
+                                            opt_geo_mlp_iteration = dataset.opt_geo_mlp_iteration,
+                                            enable_semantic = dataset.enable_semantic,
+                                            opt_semantic_mlp_iteration = dataset.opt_semantic_mlp_iteration,
+                                            semantic_feature_dim = dataset.semantic_feature_dim,
+                                            instance_feature_dim = dataset.instance_feature_dim,
+                                            semantic_mlp_dim = dataset.semantic_mlp_dim,
+                                            instance_query_num = dataset.instance_query_num,
+                                            instance_query_feat_dim = dataset.instance_query_feat_dim,
+                                            load_semantic_from_pcd = dataset.load_semantic_from_pcd,
+                                            use_geo_mlp_scales = dataset.use_geo_mlp_scales,
+                                            use_geo_mlp_rotations = dataset.use_geo_mlp_rotations,
+                                            instance_query_gaussian_sigma = dataset.instance_query_gaussian_sigma,
+                                            instance_query_distance_mode = dataset.instance_query_distance_mode)
 
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
 
@@ -122,10 +157,14 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
 
         if not args.skip_test:
              render_set(dataset, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+            
+        if dataset.enable_semantic:
+            render_semantic_set(dataset, scene.getTrainCameras(), gaussians, pipeline, background)
+            render_semantic_set(dataset, scene.getTestCameras(), gaussians, pipeline, background)
 
         if not args.skip_mesh:
             render_func = scaffold_render if dataset.enable_scaffold else vanilla_render
-            gaussExtractor = GaussianExtractor(gaussians, render_func, pipeline, bg_color=bg_color, extract_semantic=args.extract_semantic)    
+            gaussExtractor = GaussianExtractor(gaussians, render_func, pipeline, bg_color=bg_color, extract_semantic=dataset.enable_semantic)    
             print("export mesh ...")
             # set the active_sh to 0 to export only diffuse texture
             # gaussExtractor.gaussians.active_sh_degree = 0
@@ -145,10 +184,16 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
                 sdf_trunc = 5.0 * voxel_size if args.sdf_trunc < 0 else args.sdf_trunc
                 mesh = gaussExtractor.extract_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
 
-                if args.extract_semantic:
+                if dataset.enable_semantic:
                     mesh_semantic, mesh_instance = gaussExtractor.extract_semantic_mesh_bounded(voxel_size=voxel_size, sdf_trunc=sdf_trunc, depth_trunc=depth_trunc)
                     o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_semantic.ply')), mesh_semantic)
                     o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_instance.ply')), mesh_instance)
+
+                    mesh_semantic_post = post_process_mesh(mesh_semantic, cluster_to_keep=args.num_cluster)
+                    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_semantic_post.ply')), mesh_semantic_post)
+
+                    mesh_instance_post = post_process_mesh(mesh_instance, cluster_to_keep=args.num_cluster)
+                    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, name.replace('.ply', '_instance_post.ply')), mesh_instance_post)
 
                 # radius = None if args.depth_trunc < 0  else args.depth_trunc / 2
                 # pcd = gaussExtractor.extract_mesh_unbounded(resolution=args.mesh_res, radius=radius, only_visualize=True)
@@ -170,7 +215,6 @@ if __name__ == "__main__":
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
-    parser.add_argument("--extract_semantic", action="store_true")
     parser.add_argument("--skip_mesh", action="store_true")
     parser.add_argument("--is_unbounded", action="store_true")
     parser.add_argument("--voxel_size_TSDF", default=-1.0, type=float, help='Mesh: voxel size for TSDF')

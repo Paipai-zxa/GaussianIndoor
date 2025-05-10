@@ -30,10 +30,6 @@ from collections import defaultdict
 from pre_process.label import get_labels
 import colorsys
 
-# 设置环境变量
-os.environ['QT_QPA_PLATFORM'] = "offscreen"
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-
 # 常量定义
 OFFSET = 256 * 256 * 256  # 用于实例ID编码的偏移量
 VOID = 0  # 无效区域标签
@@ -46,6 +42,9 @@ def parse_args():
     parser.add_argument('--result_root', type=str, required=True, help='结果保存根目录')
     parser.add_argument('--debug', action='store_true', help='是否启用调试模式')
     parser.add_argument('--stride', type=int, default=1, help='评估步长')
+    parser.add_argument('--save_gt', action='store_true', help='是否保存真实标签')
+    parser.add_argument('--save_remap_instance', action='store_true', help='是否保存实例标签')
+    parser.add_argument('--is_use_remap_instance', action='store_true', help='是否使用remap实例标签')
     return parser.parse_args()
 
 def id2rgb(id):
@@ -56,7 +55,7 @@ def id2rgb(id):
     l = 0.5
 
     # Use colorsys to convert HSL to RGB
-    rgb = np.zeros((3,), dtype=np.uint8)
+    rgb = np.zeros((3,), dtype=np.float32)
     if id==0:
         return rgb
     r, g, b = colorsys.hls_to_rgb(h, l, s)
@@ -77,7 +76,11 @@ def main():
     # 路径配置
     gt_folder = os.path.join(args.data_root, scene_name)
     gt_semantic_path = os.path.join(gt_folder, "semantic")
-    gt_instance_path = os.path.join(gt_folder, "instance")
+    is_use_remap_instance = args.is_use_remap_instance
+    if is_use_remap_instance:
+        gt_instance_path = os.path.join(gt_folder, "instance_remap")
+    else:
+        gt_instance_path = os.path.join(gt_folder, "instance")
 
     # 结果路径配置
     result_folder = os.path.join(args.result_root)
@@ -87,7 +90,9 @@ def main():
     # 评估参数配置
     debug_flag = args.debug
     stride = args.stride
-    vis_path = os.path.join(result_folder, "semantic_visualizations")
+    save_gt = args.save_gt
+    save_remap_instance = args.save_remap_instance
+    vis_path = os.path.join(result_folder)
     label_map_path = os.path.join(gt_folder, f"{scene_idx}_map.csv")
     label_map = pd.read_csv(label_map_path)
     color_label_map = get_labels(scene_idx)
@@ -275,7 +280,7 @@ def main():
         提供基础的评估功能和配置
         """
         def __init__(self,
-                     device='cuda:0',
+                     device='cuda',
                      name="model",
                      features=None,
                      checkpoint=None,
@@ -354,14 +359,19 @@ def main():
         继承自OpenVocabEvaluator，实现具体的评估逻辑
         """
         def __init__(self, 
-                     device='cuda:0', 
+                     device='cuda', 
                      name="model", 
                      debug=False, 
                      stride=1, 
                      save_figures=None, 
-                     time=False):
+                     time=False,
+                     save_gt=False,
+                     save_remap_instance=False,
+                     is_use_remap_instance=False):
             super().__init__(device=device, name=name, debug=debug, stride=stride, save_figures=save_figures, time=time)
-
+            self.save_gt = save_gt
+            self.save_remap_instance = save_remap_instance
+            self.is_use_remap_instance = is_use_remap_instance
         def eval(self):
             """
             执行评估流程
@@ -374,6 +384,7 @@ def main():
 
             # 处理所有帧
             pred_semantics, pred_instances, gt_semantics, gt_instances, indices = [], [], [], [], []
+            names = []
             for frame in tqdm(sorted(os.listdir(pre_semantic_path), key=lambda x: int(x.replace("DSC", "").split('.')[0]))):
                 # 读取预测结果
                 pred_semantic = np.array(Image.open(os.path.join(pre_semantic_path, frame))).astype(np.int64)
@@ -385,10 +396,12 @@ def main():
                 # 读取真实标签
                 idx = int(frame.split('.')[0].replace("DSC", ""))
                 indices.append(idx)
+                names.append(frame)
                 gt_semantic = np.array(Image.open(os.path.join(gt_semantic_path, frame))).astype(np.int64)
                 gt_instance = np.array(Image.open(os.path.join(gt_instance_path, frame))).astype(np.int64)
                 
-                gt_semantic_remapping = self.our_label[gt_semantic]
+                # gt_semantic_remapping = self.our_label[gt_semantic]
+                gt_semantic_remapping = gt_semantic
                 gt_semantics.append(gt_semantic_remapping)
                 gt_instances.append(gt_instance)
                 
@@ -399,17 +412,31 @@ def main():
             gt_instances = np.stack(gt_instances, axis=0)
             indices = np.array(indices)
 
+            if self.save_remap_instance:
+                gt_instance_remap_path = os.path.join(self.save_figures, 'instance_remap')
+                gt_instances, gt_thing_ids = self._instance_label_remapping(gt_instances, gt_semantics)
+                os.makedirs(gt_instance_remap_path, exist_ok=True)
+                for i, (name, gt_instance) in enumerate(zip(names, gt_instances)):
+                    cv2.imwrite(os.path.join(gt_instance_remap_path, name), gt_instance.astype(np.uint8))
+                np.save(os.path.join(self.save_figures, 'gt_thing_ids.npy'), gt_thing_ids)
+                exit()
             # 执行各项评估
-            self._evaluate_semantic(gt_semantics, pred_semantics, indices)
-            gt_instances, gt_thing_ids = self._instance_label_remapping(gt_instances, gt_semantics)
-            self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices)
+            self._evaluate_semantic(gt_semantics, pred_semantics, indices, names, save_gt=self.save_gt)
+
+            if self.is_use_remap_instance:
+                gt_thing_ids = np.load(os.path.join(gt_folder, 'gt_thing_ids.npy'))
+            else:
+                gt_instances, gt_thing_ids = self._instance_label_remapping(gt_instances, gt_semantics)
+
+            self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=self.save_gt)
             pred_instances, pred_thing_ids = self._instance_label_remapping(pred_instances, pred_semantics)
             self._evaluate_panoptic(
                 pred_instances=pred_instances,
                 pred_semantics=pred_semantics,
                 gt_semantics=gt_semantics,
                 gt_instances=gt_instances,
-                indices=indices
+                indices=indices,
+                names=names
             )
 
             return self.panoptic_stat
@@ -515,7 +542,7 @@ def main():
 
             return pred_segms
 
-        def _evaluate_semantic(self, gt_semantics, pred_semantics, indices):
+        def _evaluate_semantic(self, gt_semantics, pred_semantics, indices, names, save_gt=False):
             """
             评估语义分割性能
             
@@ -530,9 +557,9 @@ def main():
                 for label in labels:
                     color = np.array(color_label_map[label].color) / 255.0
                     semantic_label_color_mapping[label] = color
-            
-            for gt_semantic, pred_semantic, index in tqdm(
-                list(zip(gt_semantics, pred_semantics, indices)), desc="Evaluating semantic segmentation"):
+
+            for gt_semantic, pred_semantic, index, name in tqdm(
+                list(zip(gt_semantics, pred_semantics, indices, names)), desc="Evaluating semantic segmentation"):
 
                 mask = np.isin(gt_semantic, self.evaluated_labels)
                 labels = np.unique(gt_semantic)
@@ -553,57 +580,91 @@ def main():
                     self.panoptic_stat[label].semantic_n += 1
 
                 if self.debug:
-                    self._visualize_semantic_results(pred_semantic, gt_semantic, index, semantic_label_color_mapping)
-        
-        def _visualize_semantic_results(self, pred_semantic, gt_semantic, index, semantic_label_color_mapping):
+                    self._visualize_semantic_results(pred_semantic, gt_semantic, semantic_label_color_mapping, name, save_gt=save_gt)
+
+        def _visualize_semantic_results(self, pred_semantic, gt_semantic, semantic_label_color_mapping, name, save_gt=False):
             """
-            可视化语义分割结果
-            
+            可视化语义分割结果并使用 cv2 保存
+
             Args:
                 pred_semantic: 预测语义标签
                 gt_semantic: 真实语义标签
                 index: 帧索引
                 semantic_label_color_mapping: 标签颜色映射
             """
-            plt.figure(figsize=(30, 10))
-            
-            # 绘制预测结果
-            axis = plt.subplot2grid((1, 2), loc=(0, 0))
-            p_s = np.zeros((pred_semantic.shape[0], pred_semantic.shape[1], 3))
+            # 创建预测结果图像
+            p_s = np.zeros((pred_semantic.shape[0], pred_semantic.shape[1], 3), dtype=np.uint8)
             labels = np.unique(pred_semantic)
-            s_patches = []
             for label in labels:
-                color = semantic_label_color_mapping[label]
+                color = semantic_label_color_mapping[label] * 255
                 p_s[pred_semantic == label] = color
-                s_patches.append(mpatches.Patch(color=color, label=self.label_mapping[label][:10]))
-            axis.imshow(p_s)
-            axis.set_title("Predicted Semantic")
-            axis.axis('off')
-            axis.legend(handles=s_patches[:20])
 
-            # 绘制真实标签
-            axis = plt.subplot2grid((1, 2), loc=(0, 1))
-            gt_s = np.zeros((gt_semantic.shape[0], gt_semantic.shape[1], 3))
-            labels = np.unique(gt_semantic)
-            s_patches = []
-            for label in labels:
-                color = semantic_label_color_mapping[label]
-                gt_s[gt_semantic == label] = color
-                s_patches.append(
-                    mpatches.Patch(
-                        color=color, 
-                        label=self.label_mapping[label][:10] if label in self.label_mapping.keys() else "otherprop"
-                    )
-                )
-            axis.imshow(gt_s)
-            axis.set_title("GT Semantic")
-            axis.axis('off')
-            axis.legend(handles=s_patches[:20])
-            plt.tight_layout()
-            plt.savefig(os.path.join(self.save_figures, '{:06}_semantic.png'.format(index)))
-            plt.close()
+            # 保存预测结果
+            pred_save_path = os.path.join(self.save_figures, 'semantic_image_visualization', name)
+            os.makedirs(os.path.dirname(pred_save_path), exist_ok=True)
+            cv2.imwrite(pred_save_path, cv2.cvtColor(p_s, cv2.COLOR_RGB2BGR))
 
-        def _evaluate_instance(self, gt_instances, gt_thing_ids, pred_instances, indices):
+            if save_gt:
+                # 创建真实标签图像
+                gt_s = np.zeros((gt_semantic.shape[0], gt_semantic.shape[1], 3), dtype=np.uint8)
+                labels = np.unique(gt_semantic)
+                for label in labels:
+                    color = semantic_label_color_mapping[label] * 255
+                    gt_s[gt_semantic == label] = color
+                # 保存真实标签
+                gt_save_path = os.path.join(self.save_figures, 'semantic_visualization', name)
+                os.makedirs(os.path.dirname(gt_save_path), exist_ok=True)
+                cv2.imwrite(gt_save_path, cv2.cvtColor(gt_s, cv2.COLOR_RGB2BGR))
+
+        # def _visualize_semantic_results(self, pred_semantic, gt_semantic, index, semantic_label_color_mapping):
+        #     """
+        #     可视化语义分割结果
+            
+        #     Args:
+        #         pred_semantic: 预测语义标签
+        #         gt_semantic: 真实语义标签
+        #         index: 帧索引
+        #         semantic_label_color_mapping: 标签颜色映射
+        #     """
+        #     plt.figure(figsize=(30, 10))
+            
+        #     # 绘制预测结果
+        #     axis = plt.subplot2grid((1, 2), loc=(0, 0))
+        #     p_s = np.zeros((pred_semantic.shape[0], pred_semantic.shape[1], 3))
+        #     labels = np.unique(pred_semantic)
+        #     s_patches = []
+        #     for label in labels:
+        #         color = semantic_label_color_mapping[label]
+        #         p_s[pred_semantic == label] = color
+        #         s_patches.append(mpatches.Patch(color=color, label=self.label_mapping[label][:10]))
+        #     axis.imshow(p_s)
+        #     axis.set_title("Predicted Semantic")
+        #     axis.axis('off')
+        #     axis.legend(handles=s_patches[:20])
+
+        #     # 绘制真实标签
+        #     axis = plt.subplot2grid((1, 2), loc=(0, 1))
+        #     gt_s = np.zeros((gt_semantic.shape[0], gt_semantic.shape[1], 3))
+        #     labels = np.unique(gt_semantic)
+        #     s_patches = []
+        #     for label in labels:
+        #         color = semantic_label_color_mapping[label]
+        #         gt_s[gt_semantic == label] = color
+        #         s_patches.append(
+        #             mpatches.Patch(
+        #                 color=color, 
+        #                 label=self.label_mapping[label][:10] if label in self.label_mapping.keys() else "otherprop"
+        #             )
+        #         )
+        #     axis.imshow(gt_s)
+        #     axis.set_title("GT Semantic")
+        #     axis.axis('off')
+        #     axis.legend(handles=s_patches[:20])
+        #     plt.tight_layout()
+        #     plt.savefig(os.path.join(self.save_figures, '{:06}_semantic.png'.format(index)))
+        #     plt.close()
+
+        def _evaluate_instance(self, gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=False):
             """
             评估实例分割性能
             
@@ -646,14 +707,14 @@ def main():
             self.panoptic_stat.instance_stat['num_gt_inst'] += len(gt_thing_ids)
 
             if self.debug:
-                self._visualize_instance_results(gt_instances, pred_instances, indices, 
-                                              pred_instance_label_color_mapping, gt_instance_label_color_mapping)
+                self._visualize_instance_results(gt_instances, pred_instances, names, 
+                                              pred_instance_label_color_mapping, gt_instance_label_color_mapping, save_gt=save_gt)
 
-        def _visualize_instance_results(self, gt_instances, pred_instances, indices, 
-                                      pred_instance_label_color_mapping, gt_instance_label_color_mapping):
+        def _visualize_instance_results(self, gt_instances, pred_instances, names, 
+                                        pred_instance_label_color_mapping, gt_instance_label_color_mapping, save_gt=False):
             """
-            可视化实例分割结果
-            
+            可视化实例分割结果并使用 cv2 保存
+
             Args:
                 gt_instances: 真实实例标签
                 pred_instances: 预测实例标签
@@ -661,36 +722,76 @@ def main():
                 pred_instance_label_color_mapping: 预测实例颜色映射
                 gt_instance_label_color_mapping: 真实实例颜色映射
             """
-            for gt_instance, pred_instance, index in tqdm(
-                list(zip(gt_instances, pred_instances, indices)), desc="[DEBUG] visualizing"):
-                
-                plt.figure(figsize=(20, 10))
-                
-                # 绘制预测结果
-                axis = plt.subplot2grid((1, 2), loc=(0, 0))
-                p_ins = np.zeros((pred_instance.shape[0], pred_instance.shape[1], 3))
+            for gt_instance, pred_instance, name in tqdm(
+                list(zip(gt_instances, pred_instances, names)), desc="[DEBUG] visualizing"):
+
+                # 创建预测结果图像
+                p_ins = np.zeros((pred_instance.shape[0], pred_instance.shape[1], 3), dtype=np.uint8)
                 labels = np.unique(pred_instance)
                 for label in labels:
-                    p_ins[pred_instance == label] = pred_instance_label_color_mapping.get(label, np.zeros((3, )))
-                axis.imshow(p_ins)
-                axis.set_title("Predicted Instance")
-                axis.axis('off')
+                    color = pred_instance_label_color_mapping.get(label, np.zeros((3,))) * 255
+                    p_ins[pred_instance == label] = color
 
-                # 绘制真实标签
-                axis = plt.subplot2grid((1, 2), loc=(0, 1))
-                gt_ins = np.zeros((gt_instance.shape[0], gt_instance.shape[1], 3))
-                labels = np.unique(gt_instance)
-                for label in labels:
-                    gt_ins[gt_instance == label] = gt_instance_label_color_mapping.get(label, np.zeros((3, )))
-                axis.imshow(gt_ins)
-                axis.set_title("GT Instance")
-                axis.axis('off')
+                # 保存预测结果
+                pred_save_path = os.path.join(self.save_figures, 'instance_image_visualization', name)
+                os.makedirs(os.path.dirname(pred_save_path), exist_ok=True)
+                cv2.imwrite(pred_save_path, cv2.cvtColor(p_ins, cv2.COLOR_RGB2BGR))
 
-                plt.tight_layout()
-                plt.savefig(os.path.join(self.save_figures, '{:06}_instance.png'.format(index)))
-                plt.close()
+                if save_gt:
+                    # 创建真实标签图像
+                    gt_ins = np.zeros((gt_instance.shape[0], gt_instance.shape[1], 3), dtype=np.uint8)
+                    labels = np.unique(gt_instance)
+                    for label in labels:
+                        color = gt_instance_label_color_mapping.get(label, np.zeros((3,))) * 255
+                        gt_ins[gt_instance == label] = color
+
+                    # 保存真实标签
+                    gt_save_path = os.path.join(self.save_figures, 'instance_visualization', name)
+                    os.makedirs(os.path.dirname(gt_save_path), exist_ok=True)
+                    cv2.imwrite(gt_save_path, cv2.cvtColor(gt_ins, cv2.COLOR_RGB2BGR))
+
+        # def _visualize_instance_results(self, gt_instances, pred_instances, indices, 
+        #                               pred_instance_label_color_mapping, gt_instance_label_color_mapping):
+        #     """
+        #     可视化实例分割结果
+            
+        #     Args:
+        #         gt_instances: 真实实例标签
+        #         pred_instances: 预测实例标签
+        #         indices: 帧索引
+        #         pred_instance_label_color_mapping: 预测实例颜色映射
+        #         gt_instance_label_color_mapping: 真实实例颜色映射
+        #     """
+        #     for gt_instance, pred_instance, index in tqdm(
+        #         list(zip(gt_instances, pred_instances, indices)), desc="[DEBUG] visualizing"):
+                
+        #         plt.figure(figsize=(20, 10))
+                
+        #         # 绘制预测结果
+        #         axis = plt.subplot2grid((1, 2), loc=(0, 0))
+        #         p_ins = np.zeros((pred_instance.shape[0], pred_instance.shape[1], 3))
+        #         labels = np.unique(pred_instance)
+        #         for label in labels:
+        #             p_ins[pred_instance == label] = pred_instance_label_color_mapping.get(label, np.zeros((3, )))
+        #         axis.imshow(p_ins)
+        #         axis.set_title("Predicted Instance")
+        #         axis.axis('off')
+
+        #         # 绘制真实标签
+        #         axis = plt.subplot2grid((1, 2), loc=(0, 1))
+        #         gt_ins = np.zeros((gt_instance.shape[0], gt_instance.shape[1], 3))
+        #         labels = np.unique(gt_instance)
+        #         for label in labels:
+        #             gt_ins[gt_instance == label] = gt_instance_label_color_mapping.get(label, np.zeros((3, )))
+        #         axis.imshow(gt_ins)
+        #         axis.set_title("GT Instance")
+        #         axis.axis('off')
+
+        #         plt.tight_layout()
+        #         plt.savefig(os.path.join(self.save_figures, '{:06}_instance.png'.format(index)))
+        #         plt.close()
         
-        def _evaluate_panoptic(self, pred_instances, pred_semantics, gt_semantics, gt_instances, indices):
+        def _evaluate_panoptic(self, pred_instances, pred_semantics, gt_semantics, gt_instances, indices, names):
             """
             评估全景分割性能
             
@@ -773,9 +874,9 @@ def main():
                     color = np.random.rand(3, )
                     pred_panoptic_label_color_mapping[pred_label] = color
             
-            if self.debug:
-                self._visualize_panoptic_results(pred_instances, pred_segms, gt_instances, gt_segms, indices,
-                                              pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping)
+            # if self.debug:
+            #     self._visualize_panoptic_results(pred_instances, pred_segms, gt_instances, gt_segms, indices,
+            #                                   pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping)
 
         def _visualize_panoptic_results(self, pred_instances, pred_segms, gt_instances, gt_segms, indices,
                                       pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping):
@@ -1091,7 +1192,10 @@ def main():
                     debug=debug_flag,
                     stride=stride,
                     save_figures=vis_path,
-                    time=False
+                    time=False,
+                    save_gt=save_gt,
+                    save_remap_instance=save_remap_instance,
+                    is_use_remap_instance=is_use_remap_instance
         )
 
         # 执行评估

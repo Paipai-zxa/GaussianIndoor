@@ -14,6 +14,9 @@ import torch
 import random
 import numpy as np
 from random import randint
+import scipy.optimize
+import monai
+import torch.nn.functional as F
 from utils.loss_utils import l1_loss, ssim, cross_view_constraint
 from gaussian_renderer import get_filter, vanilla_render, scaffold_render
 import sys
@@ -27,7 +30,7 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 from utils.loss_utils import get_img_grad_weight
 from torchmetrics import PearsonCorrCoef
 from utils.loss_utils import multiview_loss
-
+from utils.loss_utils import create_virtual_gt_with_linear_assignment
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 import torchvision
 import matplotlib.pyplot as plt
@@ -91,7 +94,20 @@ def training(args, dataset, opt, pipe):
                             dataset.detach_geo_rasterizer_input_input_all_map,
                             dataset.scales_geo_after_activation,
                             dataset.rotations_geo_after_activation,
-                            dataset.opt_geo_mlp_iteration)
+                            dataset.opt_geo_mlp_iteration,
+                            dataset.enable_semantic,
+                            dataset.opt_semantic_mlp_iteration,
+                            dataset.semantic_feature_dim,
+                            dataset.instance_feature_dim,
+                            dataset.semantic_mlp_dim,
+                            dataset.instance_query_num,
+                            dataset.instance_query_feat_dim,
+                            dataset.load_semantic_from_pcd,
+                            dataset.use_geo_mlp_scales,
+                            dataset.use_geo_mlp_rotations,
+                            dataset.instance_query_gaussian_sigma,
+                            dataset.instance_query_distance_mode)
+
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
 
@@ -107,10 +123,11 @@ def training(args, dataset, opt, pipe):
     viewpoint_stack = scene.getTrainCameras().copy()
     viewpoint_indices = list(range(len(viewpoint_stack)))
 
-    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress", position=0, leave=True)
+    progress_bar = tqdm(range(first_iter, opt.iterations), desc="Train", position=0, leave=True)
     first_iter += 1
 
     pearson_loss = PearsonCorrCoef().cuda()
+    dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, softmax=True)
 
     for iteration in range(first_iter, opt.iterations + 1):
         iter_start.record()
@@ -201,11 +218,17 @@ def training(args, dataset, opt, pipe):
 
         #Cross view constraint
         cross_view_loss = torch.tensor(0.0, device="cuda")
+        semantic_warping_loss = torch.tensor(0.0, device="cuda")
         if iteration > opt.cross_view_constraint_iteration and opt.use_cross_view_constraint:
             neighbor_cams = scene.get_neighbor_cameras(viewpoint_cam, opt.num_neighbors_views)
             for neighbor_cam in neighbor_cams:
-                cross_view_loss += multiview_loss(render_pkg, viewpoint_cam, neighbor_cam, render_func, gaussians, pipe, bg, iteration, opt.multi_view_pixel_noise_th)
+                cross_view_loss_, semantic_warping_loss_ = multiview_loss(render_pkg, viewpoint_cam, neighbor_cam, render_func, gaussians, \
+                                                                          pipe, bg, iteration, opt.multi_view_pixel_noise_th, dataset.enable_semantic)
+                cross_view_loss += cross_view_loss_
+                if semantic_warping_loss_ is not None:
+                    semantic_warping_loss += semantic_warping_loss_
             loss += opt.cross_view_constraint_weight * cross_view_loss
+            loss += opt.semantic_warping_weight * semantic_warping_loss
         #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         # Depth regularization
@@ -226,6 +249,38 @@ def training(args, dataset, opt, pipe):
             else:
                 depth_loss = torch.abs((invDepth  - mono_invdepth)).mean()
                 loss += depth_l1_weight(iteration) * depth_loss
+        
+        semantic_map = render_pkg["semantic_map"]
+        if opt.use_semantic_train:
+            gt_semantic_map = viewpoint_cam.semantic_train.cuda()
+        else:
+            gt_semantic_map = viewpoint_cam.semantic_gt.cuda()
+
+        semantic_ce_loss = torch.tensor(0.0, device="cuda")
+        if dataset.enable_semantic and semantic_map is not None:
+            semantic_ce_loss = F.cross_entropy(semantic_map.unsqueeze(0), gt_semantic_map.long())
+            loss += opt.semantic_ce_weight * semantic_ce_loss
+        
+        instance_map = render_pkg["instance_map"]
+        if opt.use_instance_train:
+            gt_instance_map = viewpoint_cam.instance_train.cuda()
+        else:
+            gt_instance_map = viewpoint_cam.instance_gt.cuda()
+
+        if instance_map is not None:
+            virtual_instance_map, virtual_instance_map_ind = create_virtual_gt_with_linear_assignment(gt_instance_map, instance_map)
+
+        instance_bce_loss = torch.tensor(0.0, device="cuda")
+        if dataset.enable_semantic and instance_map is not None:
+            for lidx in virtual_instance_map_ind:
+                instance_bce_loss += F.binary_cross_entropy(torch.sigmoid(instance_map[lidx:lidx+1]), (virtual_instance_map==lidx).float())
+            instance_bce_loss /= len(virtual_instance_map_ind)
+            loss += opt.instance_bce_weight * instance_bce_loss
+        
+        instance_dice_loss = torch.tensor(0.0, device="cuda")
+        if dataset.enable_semantic and instance_map is not None:
+            instance_dice_loss = dice_loss(instance_map.unsqueeze(0), virtual_instance_map.unsqueeze(0))
+            loss += opt.instance_dice_weight * instance_dice_loss
 
         loss.backward()
 
@@ -239,9 +294,15 @@ def training(args, dataset, opt, pipe):
                 cross_view_loss_for_log = cross_view_loss.item() * opt.cross_view_constraint_weight
                 depth_loss_for_log = depth_loss.item() * depth_l1_weight(iteration)
                 scale_flatten_loss_for_log = scale_flatten_loss.item() * opt.scale_flatten_weight
-                anchor_num = gaussians.get_xyz.shape[0]
-                progress_bar.set_postfix({"Loss": f"{loss_for_log:.{5}f}", "D Loss": f"{depth_loss_for_log:.{4}f}", \
-                                          "P Loss": f"{plane_loss_for_log:.{4}f}", "Cro Loss": f"{cross_view_loss_for_log:.{4}f}", "Sca Loss": f"{scale_flatten_loss_for_log:.{4}f}", "Anchor Num": f"{anchor_num}"})
+                semantic_ce_loss_for_log = semantic_ce_loss.item() * opt.semantic_ce_weight
+                semantic_warping_loss_for_log = semantic_warping_loss.item() * opt.semantic_warping_weight
+                instance_bce_loss_for_log = instance_bce_loss.item() * opt.instance_bce_weight
+                instance_dice_loss_for_log = instance_dice_loss.item() * opt.instance_dice_weight
+                anchor_num = gaussians.get_xyz.shape[0] / 1000000
+                progress_bar.set_postfix({"N": f"{anchor_num:.{2}f}M", "L": f"{loss_for_log:.{2}f}", "D": f"{depth_loss_for_log:.{3}f}", \
+                                          "P": f"{plane_loss_for_log:.{3}f}", "Cro": f"{cross_view_loss_for_log:.{3}f}", "Sca": f"{scale_flatten_loss_for_log:.{3}f}", \
+                                            "Se": f"{semantic_ce_loss_for_log:.{3}f}", "SeW": f"{semantic_warping_loss_for_log:.{3}f}", "InB": f"{instance_bce_loss_for_log:.{3}f}", \
+                                            "InD": f"{instance_dice_loss_for_log:.{3}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
@@ -354,9 +415,6 @@ if __name__ == "__main__":
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    parser.add_argument('--warmup', action='store_true', default=False)  
-    #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     args = parser.parse_args(sys.argv[1:])
     args.test_iterations.append(args.iterations)

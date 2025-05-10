@@ -13,7 +13,9 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
+import scipy
 import cv2
+import numpy as np
 try:
     from diff_gaussian_rasterization._C import fusedssim, fusedssim_backward
 except:
@@ -265,7 +267,7 @@ def compute_homography(src_cam, dst_cam, depth, normal):
     
     return H
 
-def multiview_loss(render_pkg, viewpoint_cam, nearest_cam, render, gaussians, pipe, bg, iteration, pixel_noise_th):
+def multiview_loss(render_pkg, viewpoint_cam, nearest_cam, render, gaussians, pipe, bg, iteration, pixel_noise_th, enable_semantic):
     ## compute geometry consistency mask and loss
     H, W = render_pkg['depth'].squeeze().shape
     ix, iy = torch.meshgrid(
@@ -273,8 +275,10 @@ def multiview_loss(render_pkg, viewpoint_cam, nearest_cam, render, gaussians, pi
     pixels = torch.stack([ix, iy], dim=-1).float().to(render_pkg['depth'].device)
 
     nearest_render_pkg = render(nearest_cam, gaussians, pipe, bg, iteration=iteration)
-
-    pts = gaussians.get_points_from_depth(viewpoint_cam, render_pkg['depth'])
+    if enable_semantic:
+        pts, pts_sem = gaussians.get_points_from_depth_with_values(viewpoint_cam, render_pkg['depth'], render_pkg['semantic_map'])
+    else:
+        pts = gaussians.get_points_from_depth(viewpoint_cam, render_pkg['depth'])
     pts_in_nearest_cam = pts @ nearest_cam.world_view_transform[:3,:3] + nearest_cam.world_view_transform[3,:3]
     map_z, d_mask = gaussians.get_points_depth_in_depth_map(nearest_cam, nearest_render_pkg['depth'], pts_in_nearest_cam)
     
@@ -293,9 +297,17 @@ def multiview_loss(render_pkg, viewpoint_cam, nearest_cam, render, gaussians, pi
     weights[~d_mask] = 0
 
     geo_loss = torch.zeros_like(pixel_noise).sum()
+    sem_loss = torch.zeros_like(pixel_noise).sum()
     if d_mask.sum() > 0:
         geo_loss = ((weights * pixel_noise)[d_mask]).mean()
-    return geo_loss
+        if enable_semantic:
+            # 将nearest_render_pkg['semantic_map']从[C,H,W]转换为[N,C]格式
+            class_num = nearest_render_pkg['semantic_map'].shape[0]
+            nearest_sem = nearest_render_pkg['semantic_map'].permute(1,2,0).reshape(-1, class_num)
+            l2_norm_diff = torch.norm(pts_sem - nearest_sem, dim=-1)
+            sem_loss = ((weights * l2_norm_diff)[d_mask]).mean()
+        
+    return geo_loss, sem_loss
 
 def warp_pixels(pixels, H):
     """使用单应性矩阵变换像素坐标
@@ -316,3 +328,20 @@ def warp_pixels(pixels, H):
     return warped_pixels
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+@torch.no_grad()
+def create_virtual_gt_with_linear_assignment(gt_instance_map, instance_map):
+    labels = sorted(torch.unique(gt_instance_map).cpu().tolist())
+    # L x N
+    cost_matrix = np.zeros([len(labels), instance_map.shape[0]])
+    for lidx, label in enumerate(labels):
+        # # N 对于每一行
+        # with torch.no_grad():
+        #     bce_cost = F.binary_cross_entropy(instance_map[lidx], gt_instance_map==label)
+        cost_matrix[lidx, :] = -(instance_map[:, (gt_instance_map == label).squeeze()].sum(dim=1) / ((gt_instance_map == label).sum() + 1e-4)).cpu().numpy()
+    assignment = scipy.optimize.linear_sum_assignment(np.nan_to_num(cost_matrix))
+    new_labels = torch.zeros_like(gt_instance_map)
+    for aidx, lidx in enumerate(assignment[0]):
+        new_labels[gt_instance_map == labels[lidx]] = assignment[1][aidx]
+    new_labels_ind = torch.unique(new_labels).cpu().tolist()
+    return new_labels, new_labels_ind

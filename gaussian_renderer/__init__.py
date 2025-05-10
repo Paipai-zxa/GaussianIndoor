@@ -12,6 +12,8 @@
 import torch
 import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from diff_gauss import GaussianRasterizationSettings as SemanticGaussianRasterizationSettings
+from diff_gauss import GaussianRasterizer as SemanticGaussianRasterizer
 from scene.gaussian_model_vanilla import GaussianModel as VanillaGaussianModel
 from scene.gaussian_model_scaffold import GaussianModel as ScaffoldGaussianModel
 from utils.sh_utils import eval_sh
@@ -22,6 +24,28 @@ from pytorch3d.transforms import quaternion_to_matrix
 from einops import repeat
 from utils.graphics_utils import quaternion_multiply
 from utils.loss_utils import depth_to_normal
+def build_cov_matrix_from_6d(cov6d: torch.Tensor) -> torch.Tensor:
+    """
+    Convert [N, 6] vector to [N, 3, 3] symmetric covariance matrix.
+    Input: cov6d = [sigma_00, sigma_01, sigma_02, sigma_11, sigma_12, sigma_22]
+    Output: [N, 3, 3] covariance matrices
+    """
+    assert cov6d.shape[1] == 6, "Expected 6D covariance input"
+
+    sigma_00 = cov6d[:, 0]
+    sigma_01 = cov6d[:, 1]
+    sigma_02 = cov6d[:, 2]
+    sigma_11 = cov6d[:, 3]
+    sigma_12 = cov6d[:, 4]
+    sigma_22 = cov6d[:, 5]
+
+    cov_mat = torch.stack([
+        torch.stack([sigma_00, sigma_01, sigma_02], dim=-1),
+        torch.stack([sigma_01, sigma_11, sigma_12], dim=-1),
+        torch.stack([sigma_02, sigma_12, sigma_22], dim=-1),
+    ], dim=-2)  # shape [N, 3, 3]
+
+    return cov_mat
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 def generate_neural_gaussians(viewpoint_camera, pc : ScaffoldGaussianModel, visible_mask=None, is_training=False):
     ## view frustum filtering for acceleration    
@@ -263,17 +287,17 @@ def scaffold_render(viewpoint_camera, pc : ScaffoldGaussianModel, pipe, bg_color
 
 def get_filter(viewpoint_camera, pc : ScaffoldGaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0):
     
-    screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-    screenspace_points_abs = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+    # screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+    # screenspace_points_abs = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
 
-    means2D = screenspace_points
-    means2D_abs = screenspace_points_abs
+    # means2D = screenspace_points
+    # means2D_abs = screenspace_points_abs
 
-    try:
-        screenspace_points.retain_grad()
-        screenspace_points_abs.retain_grad()
-    except:
-        pass
+    # try:
+    #     screenspace_points.retain_grad()
+    #     screenspace_points_abs.retain_grad()
+    # except:
+    #     pass
 
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -297,33 +321,39 @@ def get_filter(viewpoint_camera, pc : ScaffoldGaussianModel, pipe, bg_color : to
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
     cov3D_precomp = None
-    shs = None
+    # shs = None
     anchor = pc.get_xyz
-    color = torch.ones_like(anchor, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-    opacity = pc.get_opacity
+    # color = torch.ones_like(anchor, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+    # opacity = pc.get_opacity
     scaling = pc.get_scaling
     rot = pc.get_rotation
     means3D = anchor
-    global_normal = torch.ones_like(anchor, dtype=pc.get_xyz.dtype, requires_grad=False, device="cuda") + 0
-    local_normal = global_normal @ viewpoint_camera.world_view_transform[:3, :3]
-    pts_in_cam = means3D @ viewpoint_camera.world_view_transform[:3, :3] + viewpoint_camera.world_view_transform[3, :3]
-    local_distance = (local_normal * pts_in_cam).sum(-1).abs()
-    input_all_map = torch.zeros((means3D.shape[0], 5)).cuda().float()
-    input_all_map[:, :3] = local_normal
-    input_all_map[:, 3] = 1.0
-    input_all_map[:, 4] = local_distance
+    # global_normal = torch.ones_like(anchor, dtype=pc.get_xyz.dtype, requires_grad=False, device="cuda") + 0
+    # local_normal = global_normal @ viewpoint_camera.world_view_transform[:3, :3]
+    # pts_in_cam = means3D @ viewpoint_camera.world_view_transform[:3, :3] + viewpoint_camera.world_view_transform[3, :3]
+    # local_distance = (local_normal * pts_in_cam).sum(-1).abs()
+    # input_all_map = torch.zeros((means3D.shape[0], 5)).cuda().float()
+    # input_all_map[:, :3] = local_normal
+    # input_all_map[:, 3] = 1.0
+    # input_all_map[:, 4] = local_distance
 
-    rendered_image, radii, out_observe, out_all_map, plane_depth = rasterizer(
-        means3D = means3D,
-        means2D = means2D,
-        means2D_abs = means2D_abs,
-        shs = shs,
-        colors_precomp = color,
-        opacities = opacity,
+    # rendered_image, radii, out_observe, out_all_map, plane_depth = rasterizer(
+    #     means3D = means3D,
+    #     means2D = means2D,
+    #     means2D_abs = means2D_abs,
+    #     shs = shs,
+    #     colors_precomp = color,
+    #     opacities = opacity,
+    #     scales = scaling,
+    #     rotations = rot,
+    #     all_map = input_all_map,
+    #     cov3D_precomp = cov3D_precomp)
+
+    radii = rasterizer.visible_filter(means3D = means3D,
         scales = scaling,
         rotations = rot,
-        all_map = input_all_map,
         cov3D_precomp = cov3D_precomp)
+
     return radii > 0.0
 
 
@@ -557,6 +587,110 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
         # torchvision.utils.save_image(rendered_image_geo, "rendered_image_geo.png")
         # torchvision.utils.save_image(viewpoint_camera.depth_mask.float(), "depth_mask.png")
         # breakpoint()
+    semantic_map = None
+    instance_map = None
+    apply_semantic_mlp = False
+    if iteration != None:
+        if iteration > pc.opt_semantic_mlp_iteration:
+            apply_semantic_mlp = True
+    else:
+        # for test
+        apply_semantic_mlp = pc.enable_semantic
+    if pc.enable_semantic and apply_semantic_mlp:
+        visible_mask = radii > 0
+        # for semantic
+        semantic_features = pc.get_semantic_features[visible_mask]
+        semantic_features_input = torch.cat([semantic_features, pc.get_xyz[visible_mask]], dim=1)
+        semantics = pc.get_semantic_mlp(semantic_features_input)
+        if pc.load_semantic_from_pcd:
+            semantics = semantic_features + semantics
+
+        instance_features = pc.get_instance_features[visible_mask]
+        instance_query_pos = pc.get_instance_query_pos
+        instance_query_features = pc.get_instance_query_features
+
+        semantic_raster_settings = SemanticGaussianRasterizationSettings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=pc.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            debug=pipe.debug,
+        )
+        semantic_rasterizer = SemanticGaussianRasterizer(raster_settings=semantic_raster_settings)
+
+        _, _, _, _, _, semantic_map = semantic_rasterizer(
+            means3D = means3D[visible_mask].detach(),
+            means2D = means2D[visible_mask],
+            shs = shs[visible_mask].detach(),
+            colors_precomp = None,
+            opacities = opacity[visible_mask].detach(),
+            scales = scales_geo.detach() if pc.use_geo_mlp_scales and apply_geo_mlp else scales[visible_mask].detach(),
+            rotations = rotations_geo.detach() if pc.use_geo_mlp_rotations and apply_geo_mlp else rotations[visible_mask].detach(),
+            cov3Ds_precomp = None,
+            extra_attrs = semantics,
+        )
+
+        # instance_query_features: [N, D]
+        # instance_features:       [M, D]
+        # instance_query_pos:      [N, 3]
+        # gaussian_pos:            [M, 3] ← e.g. means3D[visible_mask]
+        # sigma:                   scalar or [N] ← isotropic
+
+        # [1] 点积特征相似度（Equation 2）
+        feat_sim = torch.sigmoid(torch.sum(
+            instance_query_features[:, None, :] * instance_features[None, :, :], dim=-1))  # [N, M]
+        if pc.instance_query_distance_mode == 0:
+            attention = feat_sim
+        elif pc.instance_query_distance_mode == 1:
+            instance_query_gaussian_sigma = pc.instance_query_gaussian_sigma
+            diff = instance_query_pos[:, None, :] - means3D[visible_mask][None, :, :]  # [N, M, 3]
+            dist_sq = torch.sum(diff ** 2, dim=-1)                            # [N, M]
+            gauss_dist = torch.exp(-0.5 * dist_sq / (instance_query_gaussian_sigma ** 2 + 1e-6))      # [N, M]
+            attention = feat_sim * gauss_dist
+        elif pc.instance_query_distance_mode == 2:
+            instance_query_covariance = pc.get_instance_query_covariance()
+            cov_matrices  = build_cov_matrix_from_6d(instance_query_covariance)
+            # Invert covariance matrices
+            inv_cov_matrices = torch.inverse(cov_matrices + 1e-6 * torch.eye(3, device=cov_matrices.device))  # [N, 3, 3]
+
+            # Compute Mahalanobis distance
+            diff = instance_query_pos[:, None, :] - means3D[visible_mask][None, :, :].detach()  # [N, M, 3]
+            diff = diff.unsqueeze(-1)  # [N, M, 3, 1]
+
+            # Apply inverse covariance: (p_g - p_q)^T Σ⁻¹ (p_g - p_q)
+            temp = torch.matmul(inv_cov_matrices[:, None, :, :], diff)  # [N, M, 3, 1]
+            dists = torch.matmul(diff.transpose(-2, -1), temp).squeeze(-1).squeeze(-1)  # [N, M]
+
+            gauss_dist = torch.exp(-0.5 * dists)  # [N, M]
+
+            # Multiply with feature similarity (already computed)
+            attention = feat_sim * gauss_dist  # [N, M]
+
+        # [4] softmax over all queries for each Gaussian g（Equation 5）
+        # instances = torch.softmax(attention, dim=0).T                            # [N, M] softmax over queries
+        instances = attention.T                            # [N, M] softmax over queries
+
+        # [5] 可选输出：lins.T 是每个 Gaussian g 属于 N 个 query 的概率分布
+        # 对于可视化或后续 weighted aggregation
+
+        _, _, _, _, _, instance_map = semantic_rasterizer(
+            means3D = means3D[visible_mask].detach(),
+            means2D = means2D[visible_mask],
+            shs = shs[visible_mask].detach(),
+            colors_precomp = None,
+            opacities = opacity[visible_mask].detach(),
+            scales = scales_geo.detach() if pc.use_geo_mlp_scales and apply_geo_mlp else scales[visible_mask].detach(),
+            rotations = rotations_geo.detach() if pc.use_geo_mlp_rotations and apply_geo_mlp else rotations[visible_mask].detach(),
+            cov3Ds_precomp = None,
+            extra_attrs = instances
+        )
 
 
     return_dict =  {"render": rendered_image,
@@ -571,6 +705,8 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
                     "rendered_distance": rendered_distance,
                     "alpha": rendered_alpha,
                     "scales": scales_geo if pc.enable_geo_mlp and apply_geo_mlp else scales,
+                    "semantic_map": semantic_map,
+                    "instance_map": instance_map,
                     }   
 
     depth_normal = (depth_to_normal(viewpoint_camera, plane_depth).permute(2,0,1) * (rendered_alpha)).detach()

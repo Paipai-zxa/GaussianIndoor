@@ -57,7 +57,7 @@ def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, label_map=N
         instance_gt = None
     if cam_info.semantic_gt_path != "":
         semantic_gt = np.array(Image.open(cam_info.semantic_gt_path))
-        semantic_gt = label_map[semantic_gt]
+        # semantic_gt = label_map[semantic_gt]
     else:
         semantic_gt = None
     orig_w, orig_h = image.size

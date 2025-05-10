@@ -4,6 +4,6 @@ scene=${scene_list[$1]}
 
 echo "Processing scene: ${scene}"
 
-python utils/semantic2point_utils.py \
-    --scene_dir data/${scene} 
-
+python pre_process/remap_semantic.py \
+--source_path ./data \
+--scene ${scene}
