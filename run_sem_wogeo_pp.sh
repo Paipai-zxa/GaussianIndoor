@@ -35,7 +35,6 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --sdf_guidance_interval 100 \
     --grad_sdf_omega 0.0002 \
     --is_apply_grad_sdf_omega \
-    --enable_sdf_guidance \
     --enable_semantic \
     --opt_semantic_mlp_iteration 0 \
     --semantic_mlp_dim 64 \

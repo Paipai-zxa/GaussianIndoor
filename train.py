@@ -330,42 +330,42 @@ def training(args, dataset, opt, pipe):
                     del gaussians.offset_denom
                     torch.cuda.empty_cache()
             else:
-                if opt.enable_sdf_guidance:
-                    if iteration < opt.densify_until_iter:
-                        # Keep track of max radii in image-space for pruning
-                        gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                        gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                # if opt.enable_sdf_guidance:
+                if iteration < opt.densify_until_iter:
+                    # Keep track of max radii in image-space for pruning
+                    gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                        if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0 and gaussians.get_xyz.shape[0] < 1000000:
-                            size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                            gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
+                    if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0:
+                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                        gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
 
-                        if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0 and gaussians.get_xyz.shape[0] < 1000000:
-                            size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                            gaussians.sdf_densify_and_prune(max_grad=opt.densify_grad_threshold, min_opacity=0.005, extent=scene.cameras_extent, max_screen_size=size_threshold, radii=radii, \
-                                                            viewpoint_stack=scene.getTrainCameras(), render=render_func, pipe=pipe, bg=bg, \
-                                                            densification_threshold=opt.densification_threshold, \
-                                                            pruning_threshold=opt.pruning_threshold, \
-                                                            is_recal_split=opt.is_recal_split, \
-                                                            is_recal_prune=opt.is_recal_prune, \
-                                                            grad_sdf_omega=opt.grad_sdf_omega, \
-                                                            is_apply_grad_sdf_omega=opt.is_apply_grad_sdf_omega, \
-                                                            enable_sdf_guidance=opt.enable_sdf_guidance)
+                    if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0:
+                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                        gaussians.sdf_densify_and_prune(max_grad=opt.densify_grad_threshold, min_opacity=0.005, extent=scene.cameras_extent, max_screen_size=size_threshold, radii=radii, \
+                                                        viewpoint_stack=scene.getTrainCameras(), render=render_func, pipe=pipe, bg=bg, \
+                                                        densification_threshold=opt.densification_threshold, \
+                                                        pruning_threshold=opt.pruning_threshold, \
+                                                        is_recal_split=opt.is_recal_split, \
+                                                        is_recal_prune=opt.is_recal_prune, \
+                                                        grad_sdf_omega=opt.grad_sdf_omega, \
+                                                        is_apply_grad_sdf_omega=opt.is_apply_grad_sdf_omega, \
+                                                        enable_sdf_guidance=opt.enable_sdf_guidance)
+                    
+                    if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                        gaussians.reset_opacity()
+                # else:
+                #     if iteration < opt.densify_until_iter:
+                #         # Keep track of max radii in image-space for pruning
+                #         gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+                #         gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+
+                #         if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                #             size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                #             gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
                         
-                        if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                            gaussians.reset_opacity()
-                else:
-                    if iteration < opt.densify_until_iter:
-                        # Keep track of max radii in image-space for pruning
-                        gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                        gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
-
-                        if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                            size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                            gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
-                        
-                        if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
-                            gaussians.reset_opacity()
+                #         if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                #             gaussians.reset_opacity()
 
             # Optimizer step
             if iteration < opt.iterations:
