@@ -1,6 +1,6 @@
 #!/bin/bash
 
-iterations=30000
+iterations=50000
 export CUDA_VISIBLE_DEVICES=$1
 
 scene_list=(0087_02 0088_00 0420_01 0628_02)
@@ -25,30 +25,29 @@ mkdir -p ${output_path}
 
 command="python train.py -s data/${scene} -m ${output_path} \
     --use_scale_flatten --scale_flatten_iteration 0 --scale_flatten_weight 1 \
-    --use_cross_view_constraint --cross_view_constraint_iteration 4000 --cross_view_constraint_weight 1.5 \
+    --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 1.5 \
     --num_neighbors_views 1 \
     --use_depth_regularization \
     --depth_l1_weight_init ${depth_l1_weight_init} \
     --depth_l1_weight_final ${depth_l1_weight_final} \
     --densify_until_iter 15000 \
-    --sdf_guidance_start_iter 4000 \
+    --sdf_guidance_start_iter 12000 \
     --sdf_guidance_end_iter 15000 \
     --sdf_guidance_interval 100 \
     --grad_sdf_omega 0.0002 \
-    --is_apply_grad_sdf_omega \
-    --enable_sdf_guidance \
     --detach_geo_mlp_input_feat \
     --detach_geo_rasterizer_input_shs \
     --enable_geo_mlp \
-    --opt_geo_mlp_iteration 2000 \
+    --opt_geo_mlp_iteration 7000 \
     --feat_dim 32 \
     --enable_semantic \
     --opt_semantic_mlp_iteration 0 \
     --semantic_mlp_dim 64 \
-    --use_semantic_train \
-    --use_instance_train \
     --instance_query_distance_mode 2 \
     --load_semantic_from_pcd \
+    --use_geo_mlp_scales \
+    --use_geo_mlp_rotations \
+    --semantic_warping_weight 0.0 \
     --iterations ${iterations} --eval ${extra_args}" 
 
 # 执行训练命令

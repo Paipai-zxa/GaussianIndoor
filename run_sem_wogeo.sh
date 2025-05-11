@@ -24,13 +24,13 @@ mkdir -p ${output_path}
 
 command="python train.py -s data/${scene} -m ${output_path} \
     --use_scale_flatten --scale_flatten_iteration 0 --scale_flatten_weight 1 \
-    --use_cross_view_constraint --cross_view_constraint_iteration 4000 --cross_view_constraint_weight 1.5 \
+    --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 1.5 \
     --num_neighbors_views 1 \
     --use_depth_regularization \
     --depth_l1_weight_init ${depth_l1_weight_init} \
     --depth_l1_weight_final ${depth_l1_weight_final} \
     --densify_until_iter 15000 \
-    --sdf_guidance_start_iter 4000 \
+    --sdf_guidance_start_iter 12000 \
     --sdf_guidance_end_iter 15000 \
     --sdf_guidance_interval 100 \
     --grad_sdf_omega 0.0002 \
@@ -39,6 +39,7 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --opt_semantic_mlp_iteration 0 \
     --semantic_mlp_dim 64 \
     --instance_query_distance_mode 2 \
+    --semantic_warping_weight 0.0 \
     --load_semantic_from_pcd \
     --iterations ${iterations} --eval ${extra_args}" 
 
