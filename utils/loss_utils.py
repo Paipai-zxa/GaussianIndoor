@@ -267,6 +267,34 @@ def compute_homography(src_cam, dst_cam, depth, normal):
     
     return H
 
+def sample_semantics_from_neighbor(pts_in_nearest_cam, nearest_cam, nearest_sem_map):
+    """
+    pts_in_nearest_cam: [N, 3]
+    nearest_cam: 相机对象，需有 Fx, Fy, Cx, Cy, 图像尺寸
+    nearest_sem_map: [C, H, W]
+    返回: [N, C]，每个点在相邻视角采样到的语义分布
+    """
+    N = pts_in_nearest_cam.shape[0]
+    C, H, W = nearest_sem_map.shape
+
+    # 投影到像素平面
+    proj_x = pts_in_nearest_cam[:, 0] * nearest_cam.Fx / pts_in_nearest_cam[:, 2] + nearest_cam.Cx
+    proj_y = pts_in_nearest_cam[:, 1] * nearest_cam.Fy / pts_in_nearest_cam[:, 2] + nearest_cam.Cy
+
+    # 归一化到[-1, 1]，适配grid_sample
+    norm_x = (proj_x / (W - 1)) * 2 - 1
+    norm_y = (proj_y / (H - 1)) * 2 - 1
+    grid = torch.stack([norm_x, norm_y], dim=-1)  # [N, 2]
+    grid = grid.view(1, 1, N, 2)  # [1, 1, N, 2]，适配grid_sample
+
+    # [C, H, W] -> [1, C, H, W]
+    sem_map = nearest_sem_map.unsqueeze(0)
+    # grid_sample: [1, C, H, W] + [1, 1, N, 2] -> [1, C, 1, N]
+    sampled_sem = F.grid_sample(sem_map, grid, mode='bilinear', align_corners=True)
+    sampled_sem = sampled_sem.squeeze(0).squeeze(1).permute(1, 0)  # [N, C]
+
+    return sampled_sem
+
 def multiview_loss(render_pkg, viewpoint_cam, nearest_cam, render, gaussians, pipe, bg, iteration, pixel_noise_th, enable_semantic):
     ## compute geometry consistency mask and loss
     H, W = render_pkg['depth'].squeeze().shape
@@ -300,13 +328,65 @@ def multiview_loss(render_pkg, viewpoint_cam, nearest_cam, render, gaussians, pi
     sem_loss = torch.zeros_like(pixel_noise).sum()
     if d_mask.sum() > 0:
         geo_loss = ((weights * pixel_noise)[d_mask]).mean()
-        if enable_semantic:
-            # 将nearest_render_pkg['semantic_map']从[C,H,W]转换为[N,C]格式
-            class_num = nearest_render_pkg['semantic_map'].shape[0]
-            nearest_sem = nearest_render_pkg['semantic_map'].permute(1,2,0).reshape(-1, class_num)
-            l2_norm_diff = torch.norm(pts_sem - nearest_sem, dim=-1)
-            sem_loss = ((weights * l2_norm_diff)[d_mask]).mean()
+    #     if enable_semantic:
+    #         # 将nearest_render_pkg['semantic_map']从[C,H,W]转换为[N,C]格式
+    #         nearest_sem_map = nearest_render_pkg['semantic_map']  # [C, H, W]
+    #         sampled_sem = sample_semantics_from_neighbor(pts_in_nearest_cam, nearest_cam, nearest_sem_map)  # [N, C]
+    #         l2_norm_diff = torch.norm(torch.softmax(pts_sem, dim=-1) - torch.softmax(sampled_sem, dim=-1), dim=-1)
+    #         sem_loss = ((weights * l2_norm_diff)[d_mask]).mean()
+
+    #         if sem_loss.isnan():
+    #             breakpoint()
+
+    #         colors = (np.random.rand(30, 3) * 255).astype(np.uint8)
+    #         colors[0] = (0, 0, 0)
+
+    #         curr_sem_map = pts_sem.permute(1, 0).reshape(10, 480, 640)
+    #         curr_sem_vis = torch.argmax(torch.softmax(curr_sem_map, dim=0), dim=0).cpu().numpy().astype(np.uint8)  # [H, W]
+    #         curr_sem_color = colors[curr_sem_vis]  # [H, W, 3]
+    #         cv2.imwrite("debug_semantic_map_current.png", curr_sem_color)
+
+    #         # 2. 相邻视角的语义图
+    #         nearest_sem_map = nearest_render_pkg['semantic_map']  # [C, H, W]
+    #         nearest_sem_vis = torch.argmax(torch.softmax(nearest_sem_map, dim=0), dim=0).cpu().numpy().astype(np.uint8)
+    #         nearest_sem_color = colors[nearest_sem_vis]  # 用同一套颜色
+    #         cv2.imwrite("debug_semantic_map_neighbor.png", nearest_sem_color)
+
+    #         # 3. 当前视角的语义图投影到相邻视角
+    #         proj_x = pts_in_nearest_cam[:, 0] * nearest_cam.Fx / pts_in_nearest_cam[:, 2] + nearest_cam.Cx
+    #         proj_y = pts_in_nearest_cam[:, 1] * nearest_cam.Fy / pts_in_nearest_cam[:, 2] + nearest_cam.Cy
+
+    #         # 创建一个空白图像用于投影结果
+    #         projected_sem_map = np.zeros_like(nearest_sem_vis, dtype=np.uint8)
+
+    #         # 将当前视角的语义图投影到相邻视角
+    #         for i, (x, y) in enumerate(zip(proj_x.detach().cpu().numpy(), proj_y.detach().cpu().numpy())):
+    #             x_int, y_int = int(round(x)), int(round(y))
+    #             if 0 <= x_int < projected_sem_map.shape[1] and 0 <= y_int < projected_sem_map.shape[0]:
+    #                 projected_sem_map[y_int, x_int] = curr_sem_vis[i // curr_sem_vis.shape[1], i % curr_sem_vis.shape[1]]
+
+    #         # 用颜色映射投影结果
+    #         projected_sem_color = colors[projected_sem_map]
+    #         cv2.imwrite("debug_projected_semantic_map.png", projected_sem_color)
+
+    #         sampled_sem_map = sampled_sem.permute(1, 0).reshape(10, 480, 640)
+    #         sampled_sem_vis = torch.argmax(torch.softmax(sampled_sem_map, dim=0), dim=0).cpu().numpy().astype(np.uint8)
+    #         sampled_sem_color = colors[sampled_sem_vis]
+    #         cv2.imwrite("debug_sampled_semantic_map.png", sampled_sem_color)
+
+    #         # visualize l2_norm_diff
+    #         l2_norm_diff_map = l2_norm_diff.reshape(480, 640).detach().cpu().numpy()
+    #         l2_norm_diff_map = (l2_norm_diff_map - l2_norm_diff_map.min()) / (l2_norm_diff_map.max() - l2_norm_diff_map.min())
+    #         l2_norm_diff_map = (l2_norm_diff_map * 255).astype(np.uint8)
+    #         cv2.imwrite("debug_l2_norm_diff.png", l2_norm_diff_map)
         
+            
+    #         loss_map = ((weights * l2_norm_diff)).reshape(480, 640).detach().cpu().numpy()
+    #         loss_map = (loss_map - loss_map.min()) / (loss_map.max() - loss_map.min())
+    #         loss_map = (loss_map * 255).astype(np.uint8)
+    #         cv2.imwrite("debug_loss_map.png", loss_map)
+
+    # print(f"geo_loss: {geo_loss}, sem_loss: {sem_loss}")
     return geo_loss, sem_loss
 
 def warp_pixels(pixels, H):

@@ -31,6 +31,8 @@ from utils.loss_utils import get_img_grad_weight
 from torchmetrics import PearsonCorrCoef
 from utils.loss_utils import multiview_loss
 from utils.loss_utils import create_virtual_gt_with_linear_assignment
+import colorsys
+import cv2
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 import torchvision
 import matplotlib.pyplot as plt
@@ -106,7 +108,8 @@ def training(args, dataset, opt, pipe):
                             dataset.use_geo_mlp_scales,
                             dataset.use_geo_mlp_rotations,
                             dataset.instance_query_gaussian_sigma,
-                            dataset.instance_query_distance_mode)
+                            dataset.instance_query_distance_mode,
+                            dataset.apply_semantic_guidance)
 
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
@@ -270,6 +273,32 @@ def training(args, dataset, opt, pipe):
         if instance_map is not None:
             virtual_instance_map, virtual_instance_map_ind = create_virtual_gt_with_linear_assignment(gt_instance_map, instance_map)
 
+        # def id2rgb(id):
+        #     # Convert ID into a hue value
+        #     golden_ratio = 1.6180339887
+        #     h = ((id * golden_ratio) % 1)
+        #     s = 0.5 + (id % 2) * 0.5
+        #     l = 0.5
+
+        #     rgb = np.zeros((3,), dtype=np.float32)
+        #     if id==0:
+        #         return rgb
+        #     r, g, b = colorsys.hls_to_rgb(h, l, s)
+
+        #     rgb[0], rgb[1], rgb[2] = r, g, b
+        #     return rgb
+        # if iteration % 100 == 0:
+        #     lut = np.array([id2rgb(i) for i in range(30)])  # shape: [max_id+1, 3]
+        #     instance_ids = torch.argmax(torch.softmax(instance_map, dim=0), dim=0).detach().cpu().numpy().astype(np.int32)
+        #     instance_rgb = lut[instance_ids]  # shape: [H, W, 3]
+        #     instance_rgb = (instance_rgb * 255).astype(np.uint8)
+        #     cv2.imwrite("./instance_map.png", instance_rgb)
+
+        #     virtual_instance_ids = virtual_instance_map.detach().cpu().numpy().astype(np.int32)
+        #     virtual_instance_rgb = lut[virtual_instance_ids]  # shape: [H, W, 3]
+        #     virtual_instance_rgb = (virtual_instance_rgb * 255).astype(np.uint8)
+        #     cv2.imwrite("./virtual_instance_map.png", virtual_instance_rgb[0])
+
         instance_bce_loss = torch.tensor(0.0, device="cuda")
         if dataset.enable_semantic and instance_map is not None:
             for lidx in virtual_instance_map_ind:
@@ -336,11 +365,11 @@ def training(args, dataset, opt, pipe):
                     gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                     gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                    if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0:
+                    if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0 and gaussians.get_xyz.shape[0] < 1400000:
                         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
 
-                    if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0:
+                    if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0 and gaussians.get_xyz.shape[0] < 1400000:
                         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                         gaussians.sdf_densify_and_prune(max_grad=opt.densify_grad_threshold, min_opacity=0.005, extent=scene.cameras_extent, max_screen_size=size_threshold, radii=radii, \
                                                         viewpoint_stack=scene.getTrainCameras(), render=render_func, pipe=pipe, bg=bg, \

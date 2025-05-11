@@ -143,7 +143,8 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
                                             use_geo_mlp_scales = dataset.use_geo_mlp_scales,
                                             use_geo_mlp_rotations = dataset.use_geo_mlp_rotations,
                                             instance_query_gaussian_sigma = dataset.instance_query_gaussian_sigma,
-                                            instance_query_distance_mode = dataset.instance_query_distance_mode)
+                                            instance_query_distance_mode = dataset.instance_query_distance_mode,
+                                            apply_semantic_guidance = dataset.apply_semantic_guidance)
 
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
 

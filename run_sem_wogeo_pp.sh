@@ -14,7 +14,7 @@ depth_l1_weight_final=1000
 extra_args="--is_train_on_all_images"
 
 current_time=$(date "+%Y%m%d_%H%M%S")
-base_exp_name=train_sem_wogeo
+base_exp_name=train_sem_wogeo_semantic_guidance_start4000
 
 # 遍历每个weight的所有组合
 exp_name="${base_exp_name}_${current_time}"
@@ -24,7 +24,7 @@ mkdir -p ${output_path}
 
 command="python train.py -s data/${scene} -m ${output_path} \
     --use_scale_flatten --scale_flatten_iteration 0 --scale_flatten_weight 1 \
-    --use_cross_view_constraint --cross_view_constraint_iteration 4000 --cross_view_constraint_weight 1.5 \
+    --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 1.5 \
     --num_neighbors_views 1 \
     --use_depth_regularization \
     --depth_l1_weight_init ${depth_l1_weight_init} \
@@ -39,7 +39,9 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --opt_semantic_mlp_iteration 0 \
     --semantic_mlp_dim 64 \
     --instance_query_distance_mode 2 \
+    --semantic_warping_weight 0.0 \
     --load_semantic_from_pcd \
+    --apply_semantic_guidance \
     --iterations ${iterations} --eval ${extra_args}" 
 
 # 执行训练命令
@@ -52,7 +54,7 @@ python render.py \
     --eval \
     --skip_train \
     --mesh_res 512 \
-    --depth_trunc 5.0 
+    --depth_trunc 5.0
 
 python ./eval_mesh/exp_evaluation.py \
     --mode eval_3D_mesh_metrics \

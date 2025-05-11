@@ -626,13 +626,13 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
         semantic_rasterizer = SemanticGaussianRasterizer(raster_settings=semantic_raster_settings)
 
         _, _, _, _, _, semantic_map = semantic_rasterizer(
-            means3D = means3D[visible_mask].detach(),
+            means3D = means3D[visible_mask],
             means2D = means2D[visible_mask],
-            shs = shs[visible_mask].detach(),
+            shs = shs[visible_mask],
             colors_precomp = None,
-            opacities = opacity[visible_mask].detach(),
-            scales = scales_geo.detach() if pc.use_geo_mlp_scales and apply_geo_mlp else scales[visible_mask].detach(),
-            rotations = rotations_geo.detach() if pc.use_geo_mlp_rotations and apply_geo_mlp else rotations[visible_mask].detach(),
+            opacities = opacity[visible_mask],
+            scales = scales_geo if pc.use_geo_mlp_scales and apply_geo_mlp else scales[visible_mask],
+            rotations = rotations_geo if pc.use_geo_mlp_rotations and apply_geo_mlp else rotations[visible_mask],
             cov3Ds_precomp = None,
             extra_attrs = semantics,
         )
@@ -681,13 +681,13 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
         # 对于可视化或后续 weighted aggregation
 
         _, _, _, _, _, instance_map = semantic_rasterizer(
-            means3D = means3D[visible_mask].detach(),
+            means3D = means3D[visible_mask],
             means2D = means2D[visible_mask],
-            shs = shs[visible_mask].detach(),
+            shs = shs[visible_mask],
             colors_precomp = None,
-            opacities = opacity[visible_mask].detach(),
-            scales = scales_geo.detach() if pc.use_geo_mlp_scales and apply_geo_mlp else scales[visible_mask].detach(),
-            rotations = rotations_geo.detach() if pc.use_geo_mlp_rotations and apply_geo_mlp else rotations[visible_mask].detach(),
+            opacities = opacity[visible_mask],
+            scales = scales_geo if pc.use_geo_mlp_scales and apply_geo_mlp else scales[visible_mask],
+            rotations = rotations_geo if pc.use_geo_mlp_rotations and apply_geo_mlp else rotations[visible_mask],
             cov3Ds_precomp = None,
             extra_attrs = instances
         )

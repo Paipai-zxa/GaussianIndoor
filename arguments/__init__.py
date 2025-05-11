@@ -111,6 +111,7 @@ class ModelParams(ParamGroup):
         self.use_geo_mlp_rotations = False
         self.instance_query_gaussian_sigma = 0.01
         self.instance_query_distance_mode = 0
+        self.apply_semantic_guidance = False
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

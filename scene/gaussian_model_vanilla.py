@@ -83,7 +83,8 @@ class  GaussianModel:
                  use_geo_mlp_scales=False,
                  use_geo_mlp_rotations=False,
                  instance_query_gaussian_sigma=0.01,
-                 instance_query_distance_mode=0):
+                 instance_query_distance_mode=0,
+                 apply_semantic_guidance=False):
         self.active_sh_degree = 0
         self.optimizer_type = optimizer_type
         self.max_sh_degree = sh_degree  
@@ -121,6 +122,7 @@ class  GaussianModel:
             self.use_geo_mlp_rotations = use_geo_mlp_rotations
             self.instance_query_gaussian_sigma = instance_query_gaussian_sigma
             self.instance_query_distance_mode = instance_query_distance_mode
+            self.apply_semantic_guidance = apply_semantic_guidance
             self._semantic_features = torch.empty(0)
             self._instance_features = torch.empty(0)
             self._instance_query_pos = torch.empty(0)
@@ -898,12 +900,29 @@ class  GaussianModel:
         # 加密操作会更保守
 
         gaussians_sdf, sdf_guidance = extract_sdf_guidance(viewpoint_stack, self, render, pipe, bg)
+        if self.enable_semantic and self.load_semantic_from_pcd and self.apply_semantic_guidance:
+            # exclude background class
+            with torch.no_grad():
+                semantic_probs = torch.softmax(self._semantic_features, dim=1)  # [N, C]
+                semantic_confidence, semantic_class = torch.max(semantic_probs, dim=1)
+                # set background class to 0
+                semantic_confidence[semantic_class == 0] = 0.0
+                sdf_guidance = sdf_guidance * semantic_confidence
+
         sdf_densify_mask = (sdf_guidance > densification_threshold).squeeze()
         self.densify_and_clone(grads if not is_apply_grad_sdf_omega else grads + sdf_guidance.unsqueeze(-1) * grad_sdf_omega, 
                                max_grad, extent, sdf_densify_mask=sdf_densify_mask if enable_sdf_guidance else None)
 
         if is_recal_split:
             gaussians_sdf, sdf_guidance = extract_sdf_guidance(viewpoint_stack, self, render, pipe, bg)
+            if self.enable_semantic and self.load_semantic_from_pcd and self.apply_semantic_guidance:
+                # exclude background class
+                semantic_probs = torch.softmax(self._semantic_features, dim=1)  # [N, C]
+                semantic_confidence, semantic_class = torch.max(semantic_probs, dim=1)
+                # set background class to 0
+                semantic_confidence[semantic_class == 0] = 0.0
+                sdf_guidance = sdf_guidance * semantic_confidence.unsqueeze(-1)
+
         sdf_densify_mask = (sdf_guidance > densification_threshold).squeeze()
         self.densify_and_split(grads, max_grad, extent, sdf_densify_mask=sdf_densify_mask if enable_sdf_guidance else None,
                                grad_sdf_omega=grad_sdf_omega, is_apply_grad_sdf_omega=is_apply_grad_sdf_omega, sdf_guidance=sdf_guidance)
