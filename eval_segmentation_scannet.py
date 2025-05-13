@@ -386,24 +386,25 @@ def main():
             pred_semantics, pred_instances, gt_semantics, gt_instances, indices = [], [], [], [], []
             names = []
             for frame in tqdm(sorted(os.listdir(pre_semantic_path), key=lambda x: int(x.replace("DSC", "").split('.')[0]))):
-                # 读取预测结果
-                pred_semantic = np.array(Image.open(os.path.join(pre_semantic_path, frame))).astype(np.int64)
-                pred_instance = np.array(Image.open(os.path.join(pre_instance_path, frame))).astype(np.int64)
-                
-                pred_semantics.append(pred_semantic)
-                pred_instances.append(pred_instance)
-
                 # 读取真实标签
                 idx = int(frame.split('.')[0].replace("DSC", ""))
                 indices.append(idx)
                 names.append(frame)
                 gt_semantic = np.array(Image.open(os.path.join(gt_semantic_path, frame))).astype(np.int64)
                 gt_instance = np.array(Image.open(os.path.join(gt_instance_path, frame))).astype(np.int64)
+                H, W = gt_semantic.shape
                 
                 # gt_semantic_remapping = self.our_label[gt_semantic]
                 gt_semantic_remapping = gt_semantic
                 gt_semantics.append(gt_semantic_remapping)
                 gt_instances.append(gt_instance)
+
+                # 读取预测结果
+                pred_semantic = np.array(Image.open(os.path.join(pre_semantic_path, frame)).resize((W, H), resample=Image.NEAREST)).astype(np.int64)
+                pred_instance = np.array(Image.open(os.path.join(pre_instance_path, frame)).resize((W, H), resample=Image.NEAREST)).astype(np.int64)
+                
+                pred_semantics.append(pred_semantic)
+                pred_instances.append(pred_instance)
                 
             # 堆叠所有帧的结果
             pred_semantics = np.stack(pred_semantics, axis=0)

@@ -124,6 +124,10 @@
 #bpy.ops.render.render(write_still=True)
 
 import bpy
+# 删除所有对象
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
 import numpy as np
 from mathutils import Matrix
 import sys

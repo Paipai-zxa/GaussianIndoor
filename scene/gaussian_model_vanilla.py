@@ -750,8 +750,9 @@ class  GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
-        self._semantic_features = optimizable_tensors["semantic_features"]
-        self._instance_features = optimizable_tensors["instance_features"]
+        if self.enable_semantic:
+            self._semantic_features = optimizable_tensors["semantic_features"]
+            self._instance_features = optimizable_tensors["instance_features"]
 
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
 
@@ -787,15 +788,16 @@ class  GaussianModel:
         return optimizable_tensors
 
     def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii,
-                              new_semantic_features, new_instance_features):
+                              new_semantic_features=None, new_instance_features=None):
         d = {"xyz": new_xyz,
         "f_dc": new_features_dc,
         "f_rest": new_features_rest,
         "opacity": new_opacities,
         "scaling" : new_scaling,
-        "rotation" : new_rotation,
-        "semantic_features": new_semantic_features,
-        "instance_features": new_instance_features}
+        "rotation" : new_rotation}
+        if self.enable_semantic:
+            d["semantic_features"] = new_semantic_features
+            d["instance_features"] = new_instance_features
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
@@ -804,8 +806,9 @@ class  GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
-        self._semantic_features = optimizable_tensors["semantic_features"]
-        self._instance_features = optimizable_tensors["instance_features"]
+        if self.enable_semantic:
+            self._semantic_features = optimizable_tensors["semantic_features"]
+            self._instance_features = optimizable_tensors["instance_features"]
 
         self.tmp_radii = torch.cat((self.tmp_radii, new_tmp_radii))
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -836,8 +839,12 @@ class  GaussianModel:
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
         new_tmp_radii = self.tmp_radii[selected_pts_mask].repeat(N)
-        new_semantic_features = self._semantic_features[selected_pts_mask].repeat(N,1)
-        new_instance_features = self._instance_features[selected_pts_mask].repeat(N,1)
+        if self.enable_semantic:
+            new_semantic_features = self._semantic_features[selected_pts_mask].repeat(N,1)
+            new_instance_features = self._instance_features[selected_pts_mask].repeat(N,1)
+        else:
+            new_semantic_features = None
+            new_instance_features = None
 
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_tmp_radii,
                                    new_semantic_features, new_instance_features)
@@ -859,8 +866,12 @@ class  GaussianModel:
         new_opacities = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
-        new_semantic_features = self._semantic_features[selected_pts_mask]
-        new_instance_features = self._instance_features[selected_pts_mask]
+        if self.enable_semantic:
+            new_semantic_features = self._semantic_features[selected_pts_mask]
+            new_instance_features = self._instance_features[selected_pts_mask]
+        else:
+            new_semantic_features = None
+            new_instance_features = None
 
         new_tmp_radii = self.tmp_radii[selected_pts_mask]
 

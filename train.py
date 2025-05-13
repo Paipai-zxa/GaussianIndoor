@@ -254,10 +254,11 @@ def training(args, dataset, opt, pipe):
                 loss += depth_l1_weight(iteration) * depth_loss
         
         semantic_map = render_pkg["semantic_map"]
-        if opt.use_semantic_train:
-            gt_semantic_map = viewpoint_cam.semantic_train.cuda()
-        else:
-            gt_semantic_map = viewpoint_cam.semantic_gt.cuda()
+        if dataset.enable_semantic:
+            if opt.use_semantic_train:
+                gt_semantic_map = viewpoint_cam.semantic_train.cuda()
+            else:
+                gt_semantic_map = viewpoint_cam.semantic_gt.cuda()
 
         semantic_ce_loss = torch.tensor(0.0, device="cuda")
         if dataset.enable_semantic and semantic_map is not None:
@@ -265,10 +266,11 @@ def training(args, dataset, opt, pipe):
             loss += opt.semantic_ce_weight * semantic_ce_loss
         
         instance_map = render_pkg["instance_map"]
-        if opt.use_instance_train:
-            gt_instance_map = viewpoint_cam.instance_train.cuda()
-        else:
-            gt_instance_map = viewpoint_cam.instance_gt.cuda()
+        if dataset.enable_semantic:
+            if opt.use_instance_train:
+                gt_instance_map = viewpoint_cam.instance_train.cuda()
+            else:
+                gt_instance_map = viewpoint_cam.instance_gt.cuda()
 
         if instance_map is not None:
             virtual_instance_map, virtual_instance_map_ind = create_virtual_gt_with_linear_assignment(gt_instance_map, instance_map)
@@ -365,11 +367,11 @@ def training(args, dataset, opt, pipe):
                     gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                     gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                    if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0 and gaussians.get_xyz.shape[0] < 1400000:
+                    if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0:
                         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
 
-                    if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0 and gaussians.get_xyz.shape[0] < 1400000:
+                    if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0:
                         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                         gaussians.sdf_densify_and_prune(max_grad=opt.densify_grad_threshold, min_opacity=0.005, extent=scene.cameras_extent, max_screen_size=size_threshold, radii=radii, \
                                                         viewpoint_stack=scene.getTrainCameras(), render=render_func, pipe=pipe, bg=bg, \

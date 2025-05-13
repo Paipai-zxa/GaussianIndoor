@@ -2,7 +2,7 @@ import os
 import shutil
 
 # 要处理的目录
-base_path = "/data1/wxb/indoor/GaussianIndoor/select/f6659a3107"
+base_path = "/data1/wxb/indoor/GaussianIndoor/data/f6659a3107"
 
 # 遍历目录
 def process_directory(path):

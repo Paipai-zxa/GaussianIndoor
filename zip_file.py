@@ -2,7 +2,7 @@ import os
 import zipfile
 
 # 要压缩的文件夹列表
-folders_to_zip = ['0087_02', '0088_00', '0420_01', '0628_02']
+folders_to_zip = ['0050_00', '0085_00', '0114_02', '0580_00', '0603_00', '0616_00', '0617_00', '0721_00', '8b5caf3398', '8d563fc2cc']
 data_dir = 'data'  # 数据目录
 zip_filename = 'selected_data.zip'  # 输出 zip 文件名
 

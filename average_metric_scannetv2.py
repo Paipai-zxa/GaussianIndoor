@@ -1,6 +1,6 @@
 import os
 import json
-exp_name = "train_onlygradsdf_Omega_0.0002_StartIter_"
+exp_name = "train_wogeo_2025"
 path = "output/scannetv2"
 scene_list = os.listdir(path)
 scene_list = [scene for scene in scene_list if not scene.endswith(".json")]

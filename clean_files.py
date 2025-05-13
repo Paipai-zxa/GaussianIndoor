@@ -56,14 +56,14 @@ if __name__ == "__main__":
     #     clean_experiment_files(base_path)
 
 
-    # scene_list = ['0050_00', '0085_00', '0114_02', '0580_00', '0603_00', '0616_00', '0617_00', '0721_00']
-    # for scene in scene_list:
-    #     base_path = "./output/scannetv2/" + scene
-    #     clean_experiment_files(base_path)
+    scene_list = ['0050_00', '0085_00', '0114_02', '0580_00', '0603_00', '0616_00', '0617_00', '0721_00']
+    for scene in scene_list:
+        base_path = "./output/scannetv2/" + scene
+        clean_experiment_files(base_path)
     
     # scene_list = ['0087_02', '0088_00', '0420_01', '0628_02']
     # for scene in scene_list:
     #     base_path = "./output/scannetv2_pan/" + scene
     #     clean_experiment_files(base_path)
-    base_path = "/data1/wxb/indoor/GaussianIndoor/output/scannetv2/0085_00/arxiv/onlygradsdf"
-    clean_experiment_files(base_path)
+    # base_path = "/data1/wxb/indoor/GaussianIndoor/output/scannetv2/0085_00/arxiv/onlygradsdf"
+    # clean_experiment_files(base_path)
