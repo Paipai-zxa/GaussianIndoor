@@ -130,7 +130,10 @@ def training(args, dataset, opt, pipe):
     first_iter += 1
 
     pearson_loss = PearsonCorrCoef().cuda()
-    dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, softmax=True)
+    # dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, softmax=True)
+    # dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, sigmoid=True)
+    dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, sigmoid=False)
+    # dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=False, sigmoid=True)
 
     for iteration in range(first_iter, opt.iterations + 1):
         iter_start.record()
@@ -299,12 +302,22 @@ def training(args, dataset, opt, pipe):
         #     virtual_instance_rgb = (virtual_instance_rgb * 255).astype(np.uint8)
         #     cv2.imwrite("./virtual_instance_map.png", virtual_instance_rgb[0])
 
+        # torchvision.utils.save_image((gt_instance_map==1).float(), "gt_instance_map.png")
+
+        # breakpoint()
         instance_bce_loss = torch.tensor(0.0, device="cuda")
+        # instance_dice_loss = torch.tensor(0.0, device="cuda")
         if dataset.enable_semantic and instance_map is not None:
             for lidx in virtual_instance_map_ind:
-                instance_bce_loss += F.binary_cross_entropy(torch.sigmoid(instance_map[lidx:lidx+1]), (virtual_instance_map==lidx).float())
+                # instance_bce_loss_ = F.binary_cross_entropy_with_logits(instance_map[lidx:lidx+1], (virtual_instance_map==lidx).float())
+                # instance_dice_loss_ = dice_loss(instance_map[lidx:lidx+1], (virtual_instance_map==lidx).float())
+                instance_bce_loss_ = F.binary_cross_entropy(instance_map[lidx:lidx+1], (virtual_instance_map==lidx).float())
+                instance_bce_loss += instance_bce_loss_
+                # instance_dice_loss += instance_dice_loss_
             instance_bce_loss /= len(virtual_instance_map_ind)
+            # instance_dice_loss /= len(virtual_instance_map_ind)
             loss += opt.instance_bce_weight * instance_bce_loss
+            # loss += opt.instance_dice_weight * instance_dice_loss
         
         instance_dice_loss = torch.tensor(0.0, device="cuda")
         if dataset.enable_semantic and instance_map is not None:
@@ -365,11 +378,11 @@ def training(args, dataset, opt, pipe):
                     gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                     gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
-                    if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0 and gaussians.get_xyz.shape[0] < 1400000:
+                    if opt.densify_from_iter < iteration < opt.sdf_guidance_start_iter and iteration % opt.densification_interval == 0:
                         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
 
-                    if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0 and gaussians.get_xyz.shape[0] < 1400000:
+                    if opt.sdf_guidance_start_iter <= iteration < opt.sdf_guidance_end_iter and iteration % opt.sdf_guidance_interval == 0:
                         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
                         gaussians.sdf_densify_and_prune(max_grad=opt.densify_grad_threshold, min_opacity=0.005, extent=scene.cameras_extent, max_screen_size=size_threshold, radii=radii, \
                                                         viewpoint_stack=scene.getTrainCameras(), render=render_func, pipe=pipe, bg=bg, \

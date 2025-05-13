@@ -361,10 +361,11 @@ class  GaussianModel:
                 for ind, instance_ind in enumerate(instance_inds):
                     instance_mask = np.asarray(instance_pcd.colors[:,0]) == instance_ind
                     instance_query_pos.append(np.mean(instance_pcd.points[instance_mask], axis=0))
-                    instance_query_feature = np.array([1.0 if i == ind else 0.0 for i in range(self.instance_feature_dim)])
+                    instance_query_feature = np.array([np.log(0.9) if i == ind else np.log(0.1) for i in range(self.instance_feature_dim)])
                     instance_query_features.append(instance_query_feature)
                     instance_query_rotation.append(np.array([1.0, 0.0, 0.0, 0.0]))
                     instance_features[instance_mask, ind] = np.log(0.9)
+                    instance_features[~instance_mask, ind] = np.log(0.1)
                     # 计算边界框
                     min_coords = np.min(instance_pcd.points[instance_mask], axis=0)
                     max_coords = np.max(instance_pcd.points[instance_mask], axis=0)

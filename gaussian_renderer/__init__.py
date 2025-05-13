@@ -605,10 +605,6 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
         if pc.load_semantic_from_pcd:
             semantics = semantic_features + semantics
 
-        instance_features = pc.get_instance_features[visible_mask]
-        instance_query_pos = pc.get_instance_query_pos
-        instance_query_features = pc.get_instance_query_features
-
         semantic_raster_settings = SemanticGaussianRasterizationSettings(
             image_height=int(viewpoint_camera.image_height),
             image_width=int(viewpoint_camera.image_width),
@@ -644,8 +640,14 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
         # sigma:                   scalar or [N] ← isotropic
 
         # [1] 点积特征相似度（Equation 2）
-        feat_sim = torch.sigmoid(torch.sum(
-            instance_query_features[:, None, :] * instance_features[None, :, :], dim=-1))  # [N, M]
+
+        instance_features = pc.get_instance_features[visible_mask]
+        instance_query_pos = pc.get_instance_query_pos
+        instance_query_features = pc.get_instance_query_features
+        # feat_sim = torch.sigmoid(torch.sum(
+        #     instance_query_features[:, None, :] * instance_features[None, :, :], dim=-1))  # [N, M]
+        feat_sim = torch.sum(
+            instance_query_features[:, None, :] * instance_features[None, :, :], dim=-1)  # [N, M]
         if pc.instance_query_distance_mode == 0:
             attention = feat_sim
         elif pc.instance_query_distance_mode == 1:
@@ -674,11 +676,8 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
             attention = feat_sim * gauss_dist  # [N, M]
 
         # [4] softmax over all queries for each Gaussian g（Equation 5）
-        # instances = torch.softmax(attention, dim=0).T                            # [N, M] softmax over queries
-        instances = attention.T                            # [N, M] softmax over queries
-
-        # [5] 可选输出：lins.T 是每个 Gaussian g 属于 N 个 query 的概率分布
-        # 对于可视化或后续 weighted aggregation
+        instances = torch.softmax(attention, dim=0).T                            # [N, M] softmax over queries
+        # instances = attention.T                            # [N, M] softmax over queries
 
         _, _, _, _, _, instance_map = semantic_rasterizer(
             means3D = means3D[visible_mask],
@@ -689,6 +688,7 @@ def vanilla_render(viewpoint_camera, pc : VanillaGaussianModel, pipe, bg_color :
             scales = scales_geo if pc.use_geo_mlp_scales and apply_geo_mlp else scales[visible_mask],
             rotations = rotations_geo if pc.use_geo_mlp_rotations and apply_geo_mlp else rotations[visible_mask],
             cov3Ds_precomp = None,
+            # extra_attrs = instances
             extra_attrs = instances
         )
 

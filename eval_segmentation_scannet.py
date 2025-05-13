@@ -421,14 +421,14 @@ def main():
                 np.save(os.path.join(self.save_figures, 'gt_thing_ids.npy'), gt_thing_ids)
                 exit()
             # 执行各项评估
-            self._evaluate_semantic(gt_semantics, pred_semantics, indices, names, save_gt=self.save_gt)
+            # self._evaluate_semantic(gt_semantics, pred_semantics, indices, names, save_gt=self.save_gt)
 
             if self.is_use_remap_instance:
                 gt_thing_ids = np.load(os.path.join(gt_folder, 'gt_thing_ids.npy'))
             else:
                 gt_instances, gt_thing_ids = self._instance_label_remapping(gt_instances, gt_semantics)
 
-            self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=self.save_gt)
+            # self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=self.save_gt)
             pred_instances, pred_thing_ids = self._instance_label_remapping(pred_instances, pred_semantics)
             self._evaluate_panoptic(
                 pred_instances=pred_instances,
@@ -436,7 +436,8 @@ def main():
                 gt_semantics=gt_semantics,
                 gt_instances=gt_instances,
                 indices=indices,
-                names=names
+                names=names,
+                save_gt=self.save_gt
             )
 
             return self.panoptic_stat
@@ -616,54 +617,6 @@ def main():
                 os.makedirs(os.path.dirname(gt_save_path), exist_ok=True)
                 cv2.imwrite(gt_save_path, cv2.cvtColor(gt_s, cv2.COLOR_RGB2BGR))
 
-        # def _visualize_semantic_results(self, pred_semantic, gt_semantic, index, semantic_label_color_mapping):
-        #     """
-        #     可视化语义分割结果
-            
-        #     Args:
-        #         pred_semantic: 预测语义标签
-        #         gt_semantic: 真实语义标签
-        #         index: 帧索引
-        #         semantic_label_color_mapping: 标签颜色映射
-        #     """
-        #     plt.figure(figsize=(30, 10))
-            
-        #     # 绘制预测结果
-        #     axis = plt.subplot2grid((1, 2), loc=(0, 0))
-        #     p_s = np.zeros((pred_semantic.shape[0], pred_semantic.shape[1], 3))
-        #     labels = np.unique(pred_semantic)
-        #     s_patches = []
-        #     for label in labels:
-        #         color = semantic_label_color_mapping[label]
-        #         p_s[pred_semantic == label] = color
-        #         s_patches.append(mpatches.Patch(color=color, label=self.label_mapping[label][:10]))
-        #     axis.imshow(p_s)
-        #     axis.set_title("Predicted Semantic")
-        #     axis.axis('off')
-        #     axis.legend(handles=s_patches[:20])
-
-        #     # 绘制真实标签
-        #     axis = plt.subplot2grid((1, 2), loc=(0, 1))
-        #     gt_s = np.zeros((gt_semantic.shape[0], gt_semantic.shape[1], 3))
-        #     labels = np.unique(gt_semantic)
-        #     s_patches = []
-        #     for label in labels:
-        #         color = semantic_label_color_mapping[label]
-        #         gt_s[gt_semantic == label] = color
-        #         s_patches.append(
-        #             mpatches.Patch(
-        #                 color=color, 
-        #                 label=self.label_mapping[label][:10] if label in self.label_mapping.keys() else "otherprop"
-        #             )
-        #         )
-        #     axis.imshow(gt_s)
-        #     axis.set_title("GT Semantic")
-        #     axis.axis('off')
-        #     axis.legend(handles=s_patches[:20])
-        #     plt.tight_layout()
-        #     plt.savefig(os.path.join(self.save_figures, '{:06}_semantic.png'.format(index)))
-        #     plt.close()
-
         def _evaluate_instance(self, gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=False):
             """
             评估实例分割性能
@@ -705,7 +658,6 @@ def main():
             pred_inst_ids = np.unique(pred_instances[gt_inst_mask])
             self.panoptic_stat.instance_stat['num_pred_inst'] += len(pred_inst_ids)
             self.panoptic_stat.instance_stat['num_gt_inst'] += len(gt_thing_ids)
-
             if self.debug:
                 self._visualize_instance_results(gt_instances, pred_instances, names, 
                                               pred_instance_label_color_mapping, gt_instance_label_color_mapping, save_gt=save_gt)
@@ -750,48 +702,7 @@ def main():
                     os.makedirs(os.path.dirname(gt_save_path), exist_ok=True)
                     cv2.imwrite(gt_save_path, cv2.cvtColor(gt_ins, cv2.COLOR_RGB2BGR))
 
-        # def _visualize_instance_results(self, gt_instances, pred_instances, indices, 
-        #                               pred_instance_label_color_mapping, gt_instance_label_color_mapping):
-        #     """
-        #     可视化实例分割结果
-            
-        #     Args:
-        #         gt_instances: 真实实例标签
-        #         pred_instances: 预测实例标签
-        #         indices: 帧索引
-        #         pred_instance_label_color_mapping: 预测实例颜色映射
-        #         gt_instance_label_color_mapping: 真实实例颜色映射
-        #     """
-        #     for gt_instance, pred_instance, index in tqdm(
-        #         list(zip(gt_instances, pred_instances, indices)), desc="[DEBUG] visualizing"):
-                
-        #         plt.figure(figsize=(20, 10))
-                
-        #         # 绘制预测结果
-        #         axis = plt.subplot2grid((1, 2), loc=(0, 0))
-        #         p_ins = np.zeros((pred_instance.shape[0], pred_instance.shape[1], 3))
-        #         labels = np.unique(pred_instance)
-        #         for label in labels:
-        #             p_ins[pred_instance == label] = pred_instance_label_color_mapping.get(label, np.zeros((3, )))
-        #         axis.imshow(p_ins)
-        #         axis.set_title("Predicted Instance")
-        #         axis.axis('off')
-
-        #         # 绘制真实标签
-        #         axis = plt.subplot2grid((1, 2), loc=(0, 1))
-        #         gt_ins = np.zeros((gt_instance.shape[0], gt_instance.shape[1], 3))
-        #         labels = np.unique(gt_instance)
-        #         for label in labels:
-        #             gt_ins[gt_instance == label] = gt_instance_label_color_mapping.get(label, np.zeros((3, )))
-        #         axis.imshow(gt_ins)
-        #         axis.set_title("GT Instance")
-        #         axis.axis('off')
-
-        #         plt.tight_layout()
-        #         plt.savefig(os.path.join(self.save_figures, '{:06}_instance.png'.format(index)))
-        #         plt.close()
-        
-        def _evaluate_panoptic(self, pred_instances, pred_semantics, gt_semantics, gt_instances, indices, names):
+        def _evaluate_panoptic(self, pred_instances, pred_semantics, gt_semantics, gt_instances, indices, names, save_gt=False):
             """
             评估全景分割性能
             
@@ -804,6 +715,7 @@ def main():
             """
             print("Evaluating panoptic quality ...")
             miou, nn = 0, 0
+            
             gt_segms = self._read_gt_panoptic_segmentation(gt_semantics, gt_instances)
             pred_segms = self._predict_panoptic_segmentation(pred_instances, pred_semantics)
             
@@ -823,6 +735,7 @@ def main():
             # 统计匹配对
             gt_matched = set()
             pred_matched = set()
+
             for label_tuple, intersection in gt_pred_map.items():
                 gt_label, pred_label = label_tuple
                 if gt_label not in gt_segms or pred_label not in pred_segms:
@@ -840,10 +753,15 @@ def main():
                     self.panoptic_stat[gt_segms[gt_label]['category_id']].iou += iou
                     gt_matched.add(gt_label)
                     pred_matched.add(pred_label)
-
                     if self.debug:
-                        # color = id2rgb(pred_label)
-                        color = np.random.rand(3, )
+                        if self.label_thing_mapping[gt_segms[gt_label]['category_id']] == 0:
+                            color = np.array(color_label_map[gt_segms[gt_label]['category_id']].color) / 255.0
+                        elif self.label_thing_mapping[gt_segms[gt_label]['category_id']] == 1:
+                            color = id2rgb(gt_label)
+                        else:
+                            breakpoint()
+                        # green
+                        # color = np.array([0, 1, 0])
                         pred_panoptic_label_color_mapping[pred_label] = color
                         gt_panoptic_label_color_mapping[gt_label] = color
 
@@ -856,10 +774,17 @@ def main():
                 self.panoptic_stat[gt_info['category_id']].fn += 1
 
                 if self.debug:
-                    # color = id2rgb(gt_label)
-                    color = np.random.rand(3, )
+                    if self.label_thing_mapping[gt_info['category_id']] == 0:
+                        color = np.array(color_label_map[gt_info['category_id']].color) / 255.0
+                    elif self.label_thing_mapping[gt_info['category_id']] == 1:
+                        color = id2rgb(gt_label)
+                    else:
+                        breakpoint()
+                    # blue
+                    # color = np.array([0, 0, 1])
                     gt_panoptic_label_color_mapping[gt_label] = color
 
+            thing_idx = max(gt_segms.keys()) + 1
             # 统计假正例
             for pred_label, pred_info in pred_segms.items():
                 if pred_label in pred_matched:
@@ -870,16 +795,24 @@ def main():
                 self.panoptic_stat[pred_info['category_id']].fp += 1
 
                 if self.debug:
-                    # color = id2rgb(pred_label)
-                    color = np.random.rand(3, )
+                    if self.label_thing_mapping[pred_info['category_id']] == 0:
+                        color = np.array(color_label_map[pred_info['category_id']].color) / 255.0
+                    elif self.label_thing_mapping[pred_info['category_id']] == 1:
+                        color = id2rgb(thing_idx)
+                        thing_idx += 1
+                    else:
+                        breakpoint()
+                    # red
+                    # color = np.array([1, 0, 0])
                     pred_panoptic_label_color_mapping[pred_label] = color
             
-            # if self.debug:
-            #     self._visualize_panoptic_results(pred_instances, pred_segms, gt_instances, gt_segms, indices,
-            #                                   pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping)
+            if self.debug:
+                self._visualize_panoptic_results(pred_instances, pred_segms, gt_instances, gt_segms, indices,
+                                              pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping, names, save_gt)
+                # exit()
 
         def _visualize_panoptic_results(self, pred_instances, pred_segms, gt_instances, gt_segms, indices,
-                                      pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping):
+                                      pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping, names, save_gt=False):
             """
             可视化全景分割结果
             
@@ -892,50 +825,38 @@ def main():
                 pred_panoptic_label_color_mapping: 预测全景分割颜色映射
                 gt_panoptic_label_color_mapping: 真实全景分割颜色映射
             """
-            for i, index in enumerate(tqdm(indices, desc="[DEBUG] visualizing")):
-                plt.figure(figsize=(20, 10))
-                
-                # 绘制预测结果
-                axis = plt.subplot2grid((1, 2), loc=(0, 0))
+            os.makedirs(os.path.join(self.save_figures, "panoptic_image_visualization"), exist_ok=True)
+            for i, name in enumerate(tqdm(names, desc="[DEBUG] visualizing")):
+                # 创建预测结果图像
                 pred_instance = pred_instances[i]
-                p_panop = np.zeros((pred_instance.shape[0], pred_instance.shape[1], 3))
+                p_panop = np.zeros((pred_instance.shape[0], pred_instance.shape[1], 3), dtype=np.uint8)
                 labels = np.unique(pred_instance)
-                pred_panop_patches = []
                 for label in labels:
                     if label == VOID:
                         continue
-                    color = pred_panoptic_label_color_mapping.get(label, np.zeros((3, )))
+                    color = (pred_panoptic_label_color_mapping.get(label, np.zeros((3, ))) * 255).astype(np.uint8)
                     p_panop[pred_instance == label] = color
-                    pred_panop_patches.append(
-                        mpatches.Patch(color=color, label=self.label_mapping[pred_segms[label]['category_id']][:10])
-                    )
-                axis.imshow(p_panop)
-                axis.set_title("Predicted Panoptic")
-                axis.axis('off')
-                axis.legend(handles=pred_panop_patches[:30])
 
-                # 绘制真实标签
-                axis = plt.subplot2grid((1, 2), loc=(0, 1))
-                gt_instance = gt_instances[i]
-                gt_panop = np.zeros((gt_instance.shape[0], gt_instance.shape[1], 3))
-                labels = np.unique(gt_instance)
-                gt_panop_patches = []
-                for label in labels:
-                    if label == VOID:
-                        continue
-                    color = gt_panoptic_label_color_mapping.get(label, np.zeros((3, )))
-                    gt_panop[gt_instance == label] = color
-                    gt_panop_patches.append(
-                        mpatches.Patch(color=color, label=self.label_mapping[gt_segms[label]['category_id']][:10])
-                    )
-                axis.imshow(gt_panop)
-                axis.set_title("GT Panoptic")
-                axis.axis('off')
-                axis.legend(handles=gt_panop_patches[:30])
+                # 保存预测结果
+                pred_save_path = os.path.join(self.save_figures, 'panoptic_image_visualization', name)
+                os.makedirs(os.path.dirname(pred_save_path), exist_ok=True)
+                cv2.imwrite(pred_save_path, cv2.cvtColor(p_panop, cv2.COLOR_RGB2BGR))
 
-                plt.tight_layout()
-                plt.savefig(os.path.join(self.save_figures, '{:06}_panoptic.png'.format(index)))
-                plt.close()
+                if save_gt:
+                    # 创建真实标签图像
+                    gt_instance = gt_instances[i]
+                    gt_panop = np.zeros((gt_instance.shape[0], gt_instance.shape[1], 3), dtype=np.uint8)
+                    labels = np.unique(gt_instance)
+                    for label in labels:
+                        if label == VOID:
+                            continue
+                        color = (gt_panoptic_label_color_mapping.get(label, np.zeros((3, ))) * 255).astype(np.uint8)
+                        gt_panop[gt_instance == label] = color
+
+                    # 保存真实标签
+                    gt_save_path = os.path.join(self.save_figures, 'panoptic_visualization', name)
+                    os.makedirs(os.path.dirname(gt_save_path), exist_ok=True)
+                    cv2.imwrite(gt_save_path, cv2.cvtColor(gt_panop, cv2.COLOR_RGB2BGR))
 
 
     def print_panoptic_results(panoptic_stat, categories, label_mapping, label_thing_mapping, verbose=False):

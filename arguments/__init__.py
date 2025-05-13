@@ -166,7 +166,7 @@ class OptimizationParams(ParamGroup):
         self.semantic_ce_weight = 0.5
         self.semantic_warping_weight = 1.5
         self.instance_bce_weight = 0.5
-        self.instance_dice_weight = 0.5
+        self.instance_dice_weight = 0.05
         self.use_instance_train = False
         self.use_semantic_train = False
         self.scale_flatten_weight = 100.0
