@@ -422,14 +422,14 @@ def main():
                 np.save(os.path.join(self.save_figures, 'gt_thing_ids.npy'), gt_thing_ids)
                 exit()
             # 执行各项评估
-            # self._evaluate_semantic(gt_semantics, pred_semantics, indices, names, save_gt=self.save_gt)
+            self._evaluate_semantic(gt_semantics, pred_semantics, indices, names, save_gt=self.save_gt)
 
             if self.is_use_remap_instance:
                 gt_thing_ids = np.load(os.path.join(gt_folder, 'gt_thing_ids.npy'))
             else:
                 gt_instances, gt_thing_ids = self._instance_label_remapping(gt_instances, gt_semantics)
 
-            # self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=self.save_gt)
+            self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=self.save_gt)
             pred_instances, pred_thing_ids = self._instance_label_remapping(pred_instances, pred_semantics)
             self._evaluate_panoptic(
                 pred_instances=pred_instances,
