@@ -1,12 +1,12 @@
 #!/bin/bash
 
-iterations=50000
+iterations=30000
 export CUDA_VISIBLE_DEVICES=$1
 
-scene_list=(0087_02 0088_00 0420_01 0628_02)
+scene_list=(1ada7a0617 5748ce6f01 f6659a3107)
 
 scene=${scene_list[$2]}
-dataset_name=scannetv2_pan
+dataset_name=scannetpp
 depth_l1_weight_init=100000
 depth_l1_weight_final=1000
 
@@ -16,6 +16,7 @@ extra_args="--is_train_on_all_images"
 current_time=$(date "+%Y%m%d_%H%M%S")
 base_exp_name=train_sem_semantic_guidance_start4000_omega0.000002_final
 
+
 # 遍历每个weight的所有组合
 exp_name="${base_exp_name}_${current_time}"
 # exp_name="debug_20250509_135935"
@@ -24,7 +25,6 @@ mkdir -p ${output_path}
 
 command="python train.py -s data/${scene} -m ${output_path} \
     --use_scale_flatten --scale_flatten_iteration 0 --scale_flatten_weight 1 \
-    --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 1.5 \
     --num_neighbors_views 1 \
     --use_depth_regularization \
     --depth_l1_weight_init ${depth_l1_weight_init} \
@@ -38,19 +38,20 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --detach_geo_mlp_input_feat \
     --detach_geo_rasterizer_input_shs \
     --enable_geo_mlp \
-    --opt_geo_mlp_iteration 7000 \
+    --opt_geo_mlp_iteration 0 \
     --feat_dim 32 \
     --enable_semantic \
     --opt_semantic_mlp_iteration 0 \
     --semantic_mlp_dim 64 \
     --instance_query_distance_mode 2 \
-    --semantic_warping_weight 0.0 \
     --load_semantic_from_pcd \
     --apply_semantic_guidance \
     --use_geo_mlp_scales \
     --use_geo_mlp_rotations \
+    --semantic_warping_weight 0.0 \
     --iterations ${iterations} --eval ${extra_args}" 
-
+    # --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 0.015 \
+# 
 # 执行训练命令
 eval $command
 

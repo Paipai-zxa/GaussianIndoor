@@ -130,7 +130,10 @@ def training(args, dataset, opt, pipe):
     first_iter += 1
 
     pearson_loss = PearsonCorrCoef().cuda()
-    dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, softmax=True)
+    # dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, softmax=True)
+    # dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, sigmoid=True)
+    dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=True, sigmoid=False)
+    # dice_loss = monai.losses.DiceLoss(include_background=False, to_onehot_y=False, sigmoid=True)
 
     for iteration in range(first_iter, opt.iterations + 1):
         iter_start.record()
@@ -301,12 +304,22 @@ def training(args, dataset, opt, pipe):
         #     virtual_instance_rgb = (virtual_instance_rgb * 255).astype(np.uint8)
         #     cv2.imwrite("./virtual_instance_map.png", virtual_instance_rgb[0])
 
+        # torchvision.utils.save_image((gt_instance_map==1).float(), "gt_instance_map.png")
+
+        # breakpoint()
         instance_bce_loss = torch.tensor(0.0, device="cuda")
+        # instance_dice_loss = torch.tensor(0.0, device="cuda")
         if dataset.enable_semantic and instance_map is not None:
             for lidx in virtual_instance_map_ind:
-                instance_bce_loss += F.binary_cross_entropy(torch.sigmoid(instance_map[lidx:lidx+1]), (virtual_instance_map==lidx).float())
+                # instance_bce_loss_ = F.binary_cross_entropy_with_logits(instance_map[lidx:lidx+1], (virtual_instance_map==lidx).float())
+                # instance_dice_loss_ = dice_loss(instance_map[lidx:lidx+1], (virtual_instance_map==lidx).float())
+                instance_bce_loss_ = F.binary_cross_entropy(instance_map[lidx:lidx+1], (virtual_instance_map==lidx).float())
+                instance_bce_loss += instance_bce_loss_
+                # instance_dice_loss += instance_dice_loss_
             instance_bce_loss /= len(virtual_instance_map_ind)
+            # instance_dice_loss /= len(virtual_instance_map_ind)
             loss += opt.instance_bce_weight * instance_bce_loss
+            # loss += opt.instance_dice_weight * instance_dice_loss
         
         instance_dice_loss = torch.tensor(0.0, device="cuda")
         if dataset.enable_semantic and instance_map is not None:

@@ -14,11 +14,12 @@ depth_l1_weight_final=1000
 extra_args="--is_train_on_all_images"
 
 current_time=$(date "+%Y%m%d_%H%M%S")
-base_exp_name=train_sem_semantic_guidance_start4000_omega0.000002_final
+# base_exp_name=train_sem_wogeo_semantic_guidance_start12000_omega0.000002_final
+# base_exp_name=debug_sem_wogeo_semantic_guidance_instancetrain
 
 # 遍历每个weight的所有组合
 exp_name="${base_exp_name}_${current_time}"
-# exp_name="debug_20250509_135935"
+exp_name="train_sem_wogeo_semantic_guidance_start12000_omega0.000002_final_20250512_154805"
 output_path=output/${dataset_name}/${scene}/${exp_name}
 mkdir -p ${output_path}
 
@@ -30,16 +31,11 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --depth_l1_weight_init ${depth_l1_weight_init} \
     --depth_l1_weight_final ${depth_l1_weight_final} \
     --densify_until_iter 15000 \
-    --sdf_guidance_start_iter 4000 \
+    --sdf_guidance_start_iter 12000 \
     --sdf_guidance_end_iter 15000 \
     --sdf_guidance_interval 100 \
     --grad_sdf_omega 0.000002 \
     --is_apply_grad_sdf_omega \
-    --detach_geo_mlp_input_feat \
-    --detach_geo_rasterizer_input_shs \
-    --enable_geo_mlp \
-    --opt_geo_mlp_iteration 7000 \
-    --feat_dim 32 \
     --enable_semantic \
     --opt_semantic_mlp_iteration 0 \
     --semantic_mlp_dim 64 \
@@ -47,31 +43,29 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --semantic_warping_weight 0.0 \
     --load_semantic_from_pcd \
     --apply_semantic_guidance \
-    --use_geo_mlp_scales \
-    --use_geo_mlp_rotations \
     --iterations ${iterations} --eval ${extra_args}" 
 
 # 执行训练命令
-eval $command
+# eval $command
 
 # 执行后续命令
-python render.py \
-    -m ${output_path} \
-    --iteration ${iterations} \
-    --eval \
-    --skip_train \
-    --mesh_res 512 \
-    --depth_trunc 5.0 
+# python render.py \
+#     -m ${output_path} \
+#     --iteration ${iterations} \
+#     --eval \
+#     --skip_train \
+#     --mesh_res 512 \
+#     --depth_trunc 5.0 
 
-python ./eval_mesh/exp_evaluation.py \
-    --mode eval_3D_mesh_metrics \
-    --dir_dataset data \
-    --dir_results_baseline ${output_path} \
-    --path_mesh_pred ${output_path}/fuse_post.ply \
-    --scene_name ${scene}
+# python ./eval_mesh/exp_evaluation.py \
+#     --mode eval_3D_mesh_metrics \
+#     --dir_dataset data \
+#     --dir_results_baseline ${output_path} \
+#     --path_mesh_pred ${output_path}/fuse_post.ply \
+#     --scene_name ${scene}
 
-python metrics.py \
-    -m ${output_path}
+# python metrics.py \
+#     -m ${output_path}
 
 python eval_segmentation_scannet.py \
     --scene_idx ${scene} \

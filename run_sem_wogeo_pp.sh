@@ -1,6 +1,6 @@
 #!/bin/bash
 
-iterations=50000
+iterations=30000
 export CUDA_VISIBLE_DEVICES=$1
 
 scene_list=(1ada7a0617 5748ce6f01 f6659a3107)
@@ -14,26 +14,25 @@ depth_l1_weight_final=1000
 extra_args="--is_train_on_all_images"
 
 current_time=$(date "+%Y%m%d_%H%M%S")
-base_exp_name=train_sem_wogeo_semantic_guidance_start4000
+base_exp_name=train_sem_wogeo_semantic_guidance_start12000_omega0.000002_final
 
 # 遍历每个weight的所有组合
 exp_name="${base_exp_name}_${current_time}"
-
+# exp_name="train_sem_wogeo_semantic_guidance_start4000_20250511_091223"
 output_path=output/${dataset_name}/${scene}/${exp_name}
 mkdir -p ${output_path}
 
 command="python train.py -s data/${scene} -m ${output_path} \
     --use_scale_flatten --scale_flatten_iteration 0 --scale_flatten_weight 1 \
-    --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 1.5 \
     --num_neighbors_views 1 \
     --use_depth_regularization \
     --depth_l1_weight_init ${depth_l1_weight_init} \
     --depth_l1_weight_final ${depth_l1_weight_final} \
     --densify_until_iter 15000 \
-    --sdf_guidance_start_iter 4000 \
+    --sdf_guidance_start_iter 12000 \
     --sdf_guidance_end_iter 15000 \
     --sdf_guidance_interval 100 \
-    --grad_sdf_omega 0.0002 \
+    --grad_sdf_omega 0.000002 \
     --is_apply_grad_sdf_omega \
     --enable_semantic \
     --opt_semantic_mlp_iteration 0 \
@@ -43,7 +42,9 @@ command="python train.py -s data/${scene} -m ${output_path} \
     --load_semantic_from_pcd \
     --apply_semantic_guidance \
     --iterations ${iterations} --eval ${extra_args}" 
+    # --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 1.5 \
 
+    # 
 # 执行训练命令
 eval $command
 
