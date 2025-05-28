@@ -25,7 +25,6 @@ for scene in "${scene_list[@]}"; do
     mkdir -p ${output_path}
 
     command="python train.py -s data/${scene} -m ${output_path} \
-        --use_cross_view_constraint --cross_view_constraint_iteration 7000 --cross_view_constraint_weight 1.5 \
         --use_scale_flatten --scale_flatten_iteration 0 --scale_flatten_weight 1 \
         --num_neighbors_views 1 \
         --use_depth_regularization \

@@ -45,7 +45,7 @@ for scene in "${scene_list[@]}"; do
         --enable_semantic \
         --opt_semantic_mlp_iteration 0 \
         --semantic_mlp_dim 64 \
-        --instance_query_distance_mode 2 \
+        --instance_query_distance_mode 1 \
         --semantic_warping_weight 0.0 \
         --load_semantic_from_pcd \
         --apply_semantic_guidance \

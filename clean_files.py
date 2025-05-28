@@ -18,7 +18,7 @@ def clean_experiment_files(base_path):
     ]
     
     # 要删除的目录
-    dirs_to_delete = ['mesh_render_normal', 'test/ours_50000/gt', 'test/ours_30000/gt']
+    dirs_to_delete = ['test/ours_50000/gt', 'test/ours_30000/gt']
     
     # 遍历所有实验文件夹
     for root, dirs, files in os.walk(base_path):
@@ -56,9 +56,14 @@ if __name__ == "__main__":
     #     clean_experiment_files(base_path)
 
 
-    scene_list = ['0050_00', '0085_00', '0114_02', '0580_00', '0603_00', '0616_00', '0617_00', '0721_00']
+    # scene_list = ['0050_00', '0085_00', '0114_02', '0580_00', '0603_00', '0616_00', '0617_00', '0721_00']
+    # for scene in scene_list:
+    #     base_path = "./output/scannetv2/" + scene
+    #     clean_experiment_files(base_path)
+
+    scene_list = ['0087_02', '0088_00', '0420_01', '0628_02']
     for scene in scene_list:
-        base_path = "./output/scannetv2/" + scene
+        base_path = "./output/scannetv2_pan/" + scene
         clean_experiment_files(base_path)
     
     # scene_list = ['0087_02', '0088_00', '0420_01', '0628_02']

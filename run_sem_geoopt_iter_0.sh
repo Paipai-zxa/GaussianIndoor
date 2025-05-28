@@ -40,7 +40,7 @@ for scene in "${scene_list[@]}"; do
         --detach_geo_mlp_input_feat \
         --detach_geo_rasterizer_input_shs \
         --enable_geo_mlp \
-        --opt_geo_mlp_iteration 7000 \
+        --opt_geo_mlp_iteration 0 \
         --feat_dim 32 \
         --enable_semantic \
         --opt_semantic_mlp_iteration 0 \

@@ -35,7 +35,7 @@ for scene in "${scene_list[@]}"; do
         --sdf_guidance_start_iter 4000 \
         --sdf_guidance_end_iter 15000 \
         --sdf_guidance_interval 100 \
-        --grad_sdf_omega 0.000002 \
+        --grad_sdf_omega 0.00002 \
         --is_apply_grad_sdf_omega \
         --detach_geo_mlp_input_feat \
         --detach_geo_rasterizer_input_shs \

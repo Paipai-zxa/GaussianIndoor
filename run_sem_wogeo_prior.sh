@@ -49,8 +49,6 @@ for scene in "${scene_list[@]}"; do
         --semantic_warping_weight 0.0 \
         --load_semantic_from_pcd \
         --apply_semantic_guidance \
-        --use_geo_mlp_scales \
-        --use_geo_mlp_rotations \
         --iterations ${iterations} --eval ${extra_args}"
 
     # 执行训练命令
