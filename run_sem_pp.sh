@@ -5,7 +5,6 @@ export CUDA_VISIBLE_DEVICES=$1
 
 scene_list=(1ada7a0617 5748ce6f01 f6659a3107)
 
-scene=${scene_list[$2]}
 dataset_name=scannetpp
 depth_l1_weight_init=100000
 depth_l1_weight_final=1000
@@ -13,9 +12,8 @@ depth_l1_weight_final=1000
 # 添加额外的训练参数
 extra_args="--is_train_on_all_images"
 
-current_time=$(date "+%Y%m%d_%H%M%S")
-base_exp_name=train_sem_semantic_guidance_start4000_omega0.000002_final
 
+base_exp_name=train_sem_pp
 
 # 遍历每个weight的所有组合
 exp_name="${base_exp_name}_${current_time}"

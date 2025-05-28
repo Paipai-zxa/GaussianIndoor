@@ -1,17 +1,18 @@
 import os
 import zipfile
 
-# 要压缩的文件夹列表
-folders_to_zip = ['0050_00', '0085_00', '0114_02', '0580_00', '0603_00', '0616_00', '0617_00', '0721_00', '8b5caf3398', '8d563fc2cc']
-data_dir = 'data'  # 数据目录
-zip_filename = 'selected_data.zip'  # 输出 zip 文件名
+zip_filename = 'selected_exp.zip'  # 输出 zip 文件名
+directories = [
+    "/lustre/xiaobao.wei/indoor/GaussianIndoor/output/scannetv2_pan/0087_02/train_sem_wogeo_semantic_guidance_start12000_omega0.000002_final_20250512_154740",
+    "/lustre/xiaobao.wei/indoor/GaussianIndoor/output/scannetv2_pan/0088_00/train_sem_semantic_guidance_start4000_20250511_024331",
+    "/lustre/xiaobao.wei/indoor/GaussianIndoor/output/scannetv2_pan/0420_01/train_sem_wogeo_semantic_guidance_start12000_omega0.000002_final_20250512_154802",
+    "/lustre/xiaobao.wei/indoor/GaussianIndoor/output/scannetv2_pan/0628_02/train_sem_wogeo_semantic_guidance_start12000_omega0.000002_final_20250512_154805"
+]
 
-# 创建 zip 文件
 with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-    for folder in folders_to_zip:
-        folder_path = os.path.join(data_dir, folder)
-        for root, dirs, files in os.walk(folder_path):
+    for directory in directories:
+        for root, _, files in os.walk(directory):
             for file in files:
                 file_path = os.path.join(root, file)
-                # 将文件添加到 zip 中，保持目录结构
-                zipf.write(file_path, os.path.relpath(file_path, data_dir))
+                arcname = os.path.relpath(file_path, os.path.dirname(directory))
+                zipf.write(file_path, arcname)

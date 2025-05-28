@@ -1,6 +1,6 @@
 #!/bin/bash
 
-iterations=50000
+iterations=30000
 export CUDA_VISIBLE_DEVICES=$1
 
 scene_list=(1ada7a0617 5748ce6f01 f6659a3107)
