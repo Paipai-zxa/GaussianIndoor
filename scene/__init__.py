@@ -19,6 +19,7 @@ from scene.dataset_readers import load_scene
 from scene.gaussian_model_scaffold import GaussianModel as ScaffoldGaussianModel
 from scene.gaussian_model_vanilla import GaussianModel as VanillaGaussianModel
 from arguments import ModelParams
+from scene.cameras import TrajCamera
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
 class Scene:
@@ -105,7 +106,18 @@ class Scene:
 
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
-    
+
+    def getTrajCameras(self, traj_json=None):
+        if traj_json:
+            traj_cameras = []
+            with open(traj_json, 'r') as f:
+                json_data = json.load(f)
+                intrinsics = json_data['intrinsics']
+                poses = json_data['poses']
+                for pose in poses:
+                    traj_cameras.append(TrajCamera(np.array(intrinsics), np.array(pose['matrix'])))
+        return traj_cameras
+
     #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     def get_neighbor_cameras(self, camera, num_neighbors, scale=1.0):
         """

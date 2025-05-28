@@ -164,8 +164,12 @@ def process_scene_point_clouds(scene_dir, semantic_dir, output_dir, is_depth_any
         ),
         fast_normal_computation=False
     )
-    
-    out_pcd_path = os.path.join(output_dir, f"points3D_semantic.ply")
+    if convert_to_color:
+        out_pcd_path = os.path.join(output_dir, f"points3D_semantic_visualize.ply")
+        
+    else:
+        out_pcd_path = os.path.join(output_dir, f"points3D_semantic.ply")
+        
     if is_depth_anything:
         out_pcd_path = os.path.join(output_dir, f"points3D_depth_anything.ply")
 

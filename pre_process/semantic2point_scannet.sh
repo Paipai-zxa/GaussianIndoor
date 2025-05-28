@@ -7,4 +7,5 @@ echo "Processing scene: ${scene}"
 python utils/semantic2point_utils.py \
     --scene_dir data/${scene} \
     --semantic_dir semantic \
+    # --convert_to_color
 

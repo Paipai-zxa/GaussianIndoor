@@ -45,6 +45,8 @@ def parse_args():
     parser.add_argument('--save_gt', action='store_true', help='是否保存真实标签')
     parser.add_argument('--save_remap_instance', action='store_true', help='是否保存实例标签')
     parser.add_argument('--is_use_remap_instance', action='store_true', help='是否使用remap实例标签')
+    parser.add_argument('--save_traj', action='store_true', help='是否保存轨迹')
+    parser.add_argument('--save_traj_path', type=str, default='render_traj', help='轨迹保存路径')
     return parser.parse_args()
 
 def id2rgb(id):
@@ -81,11 +83,15 @@ def main():
         gt_instance_path = os.path.join(gt_folder, "instance_remap")
     else:
         gt_instance_path = os.path.join(gt_folder, "instance")
+    
 
     # 结果路径配置
     result_folder = os.path.join(args.result_root)
     pre_semantic_path = os.path.join(result_folder, "semantic_image")
     pre_instance_path = os.path.join(result_folder, "instance_image")
+
+    save_traj = args.save_traj
+    save_traj_path = os.path.join(args.result_root, args.save_traj_path)
 
     # 评估参数配置
     debug_flag = args.debug
@@ -367,11 +373,13 @@ def main():
                      time=False,
                      save_gt=False,
                      save_remap_instance=False,
-                     is_use_remap_instance=False):
+                     is_use_remap_instance=False,
+                     save_traj=False):
             super().__init__(device=device, name=name, debug=debug, stride=stride, save_figures=save_figures, time=time)
             self.save_gt = save_gt
             self.save_remap_instance = save_remap_instance
             self.is_use_remap_instance = is_use_remap_instance
+            self.save_traj = save_traj
         def eval(self):
             """
             执行评估流程
@@ -422,16 +430,16 @@ def main():
                 np.save(os.path.join(self.save_figures, 'gt_thing_ids.npy'), gt_thing_ids)
                 exit()
             # 执行各项评估
-            self._evaluate_semantic(gt_semantics, pred_semantics, indices, names, save_gt=self.save_gt)
+            semantic_label_color_mapping = self._evaluate_semantic(gt_semantics, pred_semantics, indices, names, save_gt=self.save_gt)
 
             if self.is_use_remap_instance:
                 gt_thing_ids = np.load(os.path.join(gt_folder, 'gt_thing_ids.npy'))
             else:
                 gt_instances, gt_thing_ids = self._instance_label_remapping(gt_instances, gt_semantics)
 
-            self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=self.save_gt)
+            pred_instance_label_color_mapping, gt_instance_label_color_mapping = self._evaluate_instance(gt_instances, gt_thing_ids, pred_instances, indices, names, save_gt=self.save_gt)
             pred_instances, pred_thing_ids = self._instance_label_remapping(pred_instances, pred_semantics)
-            self._evaluate_panoptic(
+            pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping = self._evaluate_panoptic(
                 pred_instances=pred_instances,
                 pred_semantics=pred_semantics,
                 gt_semantics=gt_semantics,
@@ -440,6 +448,63 @@ def main():
                 names=names,
                 save_gt=self.save_gt
             )
+
+            if self.save_traj:
+                traj_semantics, traj_instances, indices = [], [], []
+                names = []
+                for frame in tqdm(sorted(os.listdir(os.path.join(save_traj_path, "semantic_image")), key=lambda x: int(x.replace("DSC", "").split('.')[0]))):
+                    idx = int(frame.split('.')[0].replace("DSC", ""))
+                    indices.append(idx)
+                    names.append(frame)
+                    traj_semantic = np.array(Image.open(os.path.join(save_traj_path, "semantic_image", frame))).astype(np.int64)
+                    traj_instance = np.array(Image.open(os.path.join(save_traj_path, "instance_image", frame))).astype(np.int64)
+                    traj_semantics.append(traj_semantic)
+                    traj_instances.append(traj_instance)
+                traj_semantics = np.stack(traj_semantics, axis=0)
+                traj_instances = np.stack(traj_instances, axis=0)
+                indices = np.array(indices)
+                names = np.array(names)
+
+                for i, (name, traj_semantic, traj_instance) in enumerate(zip(names, traj_semantics, traj_instances)):
+    
+                    # 创建预测结果图像
+                    p_s = np.zeros((traj_semantic.shape[0], traj_semantic.shape[1], 3), dtype=np.uint8)
+                    labels = np.unique(traj_semantic)
+                    for label in labels:
+                        color = semantic_label_color_mapping[label] * 255
+                        p_s[traj_semantic == label] = color
+
+                    # 保存预测结果
+                    pred_save_path = os.path.join(save_traj_path, 'semantic_image_visualization', name)
+                    os.makedirs(os.path.dirname(pred_save_path), exist_ok=True)
+                    cv2.imwrite(pred_save_path, cv2.cvtColor(p_s, cv2.COLOR_RGB2BGR))
+
+                    # 创建预测结果图像
+                    p_ins = np.zeros((traj_instance.shape[0], traj_instance.shape[1], 3), dtype=np.uint8)
+                    labels = np.unique(traj_instance)
+                    for label in labels:
+                        color = pred_instance_label_color_mapping.get(label, np.zeros((3,))) * 255
+                        p_ins[traj_instance == label] = color
+
+                    # 保存预测结果
+                    pred_save_path = os.path.join(save_traj_path, 'instance_image_visualization', name)
+                    os.makedirs(os.path.dirname(pred_save_path), exist_ok=True)
+                    cv2.imwrite(pred_save_path, cv2.cvtColor(p_ins, cv2.COLOR_RGB2BGR))
+                
+                traj_instances, traj_thing_ids = self._instance_label_remapping(traj_instances, traj_semantics)
+                for i, (name, traj_instance) in enumerate(zip(names, traj_instances)):
+                    p_panop = np.zeros((traj_instance.shape[0], traj_instance.shape[1], 3), dtype=np.uint8)
+                    labels = np.unique(traj_instance)
+                    for label in labels:
+                        if label == VOID:
+                            continue
+                        color = (pred_panoptic_label_color_mapping.get(label, np.zeros((3, ))) * 255).astype(np.uint8)
+                        p_panop[traj_instance == label] = color
+
+                    # 保存预测结果
+                    traj_save_path = os.path.join(save_traj_path, 'panoptic_image_visualization', name)
+                    os.makedirs(os.path.dirname(traj_save_path), exist_ok=True)
+                    cv2.imwrite(traj_save_path, cv2.cvtColor(p_panop, cv2.COLOR_RGB2BGR))
 
             return self.panoptic_stat
 
@@ -553,8 +618,8 @@ def main():
                 pred_semantics: 预测语义标签
                 indices: 帧索引
             """
+            semantic_label_color_mapping = {}
             if self.debug:
-                semantic_label_color_mapping = {}
                 labels = np.unique(np.append(np.unique(gt_semantics), np.unique(pred_semantics)))
                 for label in labels:
                     color = np.array(color_label_map[label].color) / 255.0
@@ -583,6 +648,8 @@ def main():
 
                 if self.debug:
                     self._visualize_semantic_results(pred_semantic, gt_semantic, semantic_label_color_mapping, name, save_gt=save_gt)
+            
+            return semantic_label_color_mapping
 
         def _visualize_semantic_results(self, pred_semantic, gt_semantic, semantic_label_color_mapping, name, save_gt=False):
             """
@@ -628,9 +695,8 @@ def main():
                 pred_instances: 预测实例标签
                 indices: 帧索引
             """
-            if self.debug:
-                pred_instance_label_color_mapping = {}
-                gt_instance_label_color_mapping = {}
+            pred_instance_label_color_mapping = {}
+            gt_instance_label_color_mapping = {}
 
             print("Evaluating instance segmentation ...")
             gt_inst_ids, gt_inst_areas = np.unique(gt_instances, return_counts=True)
@@ -662,6 +728,7 @@ def main():
             if self.debug:
                 self._visualize_instance_results(gt_instances, pred_instances, names, 
                                               pred_instance_label_color_mapping, gt_instance_label_color_mapping, save_gt=save_gt)
+            return pred_instance_label_color_mapping, gt_instance_label_color_mapping
 
         def _visualize_instance_results(self, gt_instances, pred_instances, names, 
                                         pred_instance_label_color_mapping, gt_instance_label_color_mapping, save_gt=False):
@@ -720,9 +787,8 @@ def main():
             gt_segms = self._read_gt_panoptic_segmentation(gt_semantics, gt_instances)
             pred_segms = self._predict_panoptic_segmentation(pred_instances, pred_semantics)
             
-            if self.debug:
-                pred_panoptic_label_color_mapping = {}
-                gt_panoptic_label_color_mapping = {}
+            pred_panoptic_label_color_mapping = {}
+            gt_panoptic_label_color_mapping = {}
             
             # 计算混淆矩阵
             gt_pred_instance = gt_instances.astype(np.uint64) * OFFSET + pred_instances.astype(np.uint64)
@@ -811,6 +877,7 @@ def main():
                 self._visualize_panoptic_results(pred_instances, pred_segms, gt_instances, gt_segms, indices,
                                               pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping, names, save_gt)
                 # exit()
+            return pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping
 
         def _visualize_panoptic_results(self, pred_instances, pred_segms, gt_instances, gt_segms, indices,
                                       pred_panoptic_label_color_mapping, gt_panoptic_label_color_mapping, names, save_gt=False):
@@ -1117,7 +1184,8 @@ def main():
                     time=False,
                     save_gt=save_gt,
                     save_remap_instance=save_remap_instance,
-                    is_use_remap_instance=is_use_remap_instance
+                    is_use_remap_instance=is_use_remap_instance,
+                    save_traj=save_traj
         )
 
         # 执行评估
