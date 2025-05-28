@@ -50,6 +50,7 @@ def render_set(dataset, name, iteration, views, gaussians, pipeline, background)
     render_depths_path = os.path.join(model_path, name, "ours_{}".format(iteration), "render_depths")
     render_normals_path = os.path.join(model_path, name, "ours_{}".format(iteration), "render_normals")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
+    
 
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
@@ -159,6 +160,51 @@ def render_sets(args, dataset : ModelParams, iteration : int, pipeline : Pipelin
         if not args.skip_test:
              render_set(dataset, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
             
+        if args.render_traj:
+            model_path = dataset.model_path
+            rgb_path = os.path.join(model_path, "render_traj", "rgb")
+            depth_path = os.path.join(model_path, "render_traj", "depth")
+            normal_path = os.path.join(model_path, "render_traj", "normal")
+            if dataset.enable_semantic:
+                semantic_path = os.path.join(model_path, "render_traj", "semantic_image")
+                instance_path = os.path.join(model_path, "render_traj", "instance_image")
+            
+
+            makedirs(rgb_path, exist_ok=True)
+            makedirs(depth_path, exist_ok=True)
+            makedirs(normal_path, exist_ok=True)
+            if dataset.enable_semantic:
+                makedirs(semantic_path, exist_ok=True)
+                makedirs(instance_path, exist_ok=True)
+
+            for idx, view in enumerate(tqdm(scene.getTrajCameras(traj_json=args.traj_json), desc="Rendering progress")):
+                bg = background
+                render_func = scaffold_render if dataset.enable_scaffold else vanilla_render
+                renderpkg = render_func(view, gaussians, pipeline, bg)
+
+                img_name = "%06d" % idx
+                rendering = renderpkg["render"]
+                depth = renderpkg["depth"]
+                normal = renderpkg["normal"]
+                depth_viz = visualize_depth(depth)
+                normal_viz = visualize_normal(normal)
+
+                if dataset.enable_semantic:
+                    semantic_map = renderpkg["semantic_map"]
+                    semantic_map = torch.argmax(torch.softmax(semantic_map, dim=0), dim=0)
+                    instance_map = renderpkg["instance_map"]
+                    instance_map = torch.argmax(torch.softmax(instance_map, dim=0), dim=0)
+                    semantic_map = semantic_map.cpu().numpy().astype(np.uint8)
+                    instance_map = instance_map.cpu().numpy().astype(np.uint8)
+
+
+                torchvision.utils.save_image(rendering, os.path.join(rgb_path, img_name + ".png"))
+                cv2.imwrite(os.path.join(depth_path, img_name + ".png"), depth_viz)
+                cv2.imwrite(os.path.join(normal_path, img_name + ".png"), normal_viz)
+                if dataset.enable_semantic:
+                    cv2.imwrite(os.path.join(semantic_path, img_name + ".png"), semantic_map)
+                    cv2.imwrite(os.path.join(instance_path, img_name + ".png"), instance_map)
+            
         if dataset.enable_semantic:
             render_semantic_set(dataset, scene.getTrainCameras(), gaussians, pipeline, background)
             render_semantic_set(dataset, scene.getTestCameras(), gaussians, pipeline, background)
@@ -218,6 +264,8 @@ if __name__ == "__main__":
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--skip_mesh", action="store_true")
     parser.add_argument("--is_unbounded", action="store_true")
+    parser.add_argument("--render_traj", action="store_true")
+    parser.add_argument("--traj_json", type=str, help="Path to the trajectory JSON file", default=None)
     parser.add_argument("--voxel_size_TSDF", default=-1.0, type=float, help='Mesh: voxel size for TSDF')
     parser.add_argument("--depth_trunc", default=-1.0, type=float, help='Mesh: Max depth range for TSDF')
     parser.add_argument("--sdf_trunc", default=-1.0, type=float, help='Mesh: truncation value for TSDF')

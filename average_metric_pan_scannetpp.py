@@ -1,6 +1,6 @@
 import os
 import json
-exp_name = "train_sem_wogeo_semantic_guidance_start12000_omega0.000002_usetrain_final"
+exp_name = "train_sem_wogeo_semantic_guidance_start12000_"
 path = "output/scannetpp"
 scene_list = os.listdir(path)
 scene_list = [scene for scene in scene_list if not scene.endswith(".json")]
